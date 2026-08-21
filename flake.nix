@@ -2,7 +2,12 @@
   description = "lilypond-wasm — WASI/WebAssembly build of GNU LilyPond, tailing upstream master";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Pinned to the same rev as hlolli/lilypond-wasm (see JOURNAL.md
+    # 2026-08-21): its wasi32 stdenv predates the Rust component-model
+    # tooling (rustc bootstrap!) that current nixpkgs drags into every
+    # cross build, and it is the dep-world hlolli's guile/gmp/libffi
+    # derivations were proven against. Deliberately not tracking a channel.
+    nixpkgs.url = "github:NixOS/nixpkgs/4db2c220f32fd162658ed1b7bb2f46a82996ddbe";
 
     # Upstream GNU LilyPond, pinned but advanceable:
     #   nix flake update lilypond-src
