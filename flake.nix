@@ -157,6 +157,62 @@
                 })
               else
                 prev.boehmgc;
+
+            # Fontconfig, adapted from hlolli's derivation: WASI has no file
+            # locking (fcntl F_* constants) — patched out of the cache code —
+            # and the CLI tools need process APIs, so only the static library
+            # and its generated tables are built.
+            fontconfig =
+              if prev.stdenv.hostPlatform.isWasi then
+                prev.fontconfig.overrideAttrs (old: {
+                  # (hlolli's snprintf-check patch is obsolete here: 2.17.1
+                  # already dropped AX_FUNC_SNPRINTF upstream.)
+                  patches = (old.patches or [ ]) ++ [
+                    ./patches/deps/fontconfig-0001-wasi-cache-locks.patch
+                  ];
+                  env = (old.env or { }) // {
+                    CFLAGS = (old.env.CFLAGS or "")
+                      + " -O2 -DFC_NO_MT -mexception-handling -mllvm -wasm-enable-sjlj";
+                    ac_cv_va_copy = "C99";
+                    fc_cv_c99_vsnprintf = "yes";
+                  };
+                  configureFlags = (old.configureFlags or [ ]) ++ [
+                    "--disable-cache-build"
+                    "--disable-docs"
+                    "--disable-iconv"
+                    "--disable-nls"
+                    "--with-add-fonts=no"
+                    "--with-arch=wasm32"
+                    "--with-cache-dir=/tmp/fontconfig-cache"
+                    "--with-default-fonts=/fonts"
+                  ];
+                  # library-only build: the fc-* CLI tools need process APIs
+                  # WASI lacks. (Layout differs from hlolli's fontconfig —
+                  # 2.17.1 generates its tables in fc-case/fc-lang.)
+                  buildPhase = ''
+                    runHook preBuild
+                    make -C fc-case
+                    make -C fc-lang
+                    make -C src fcalias.h fcaliastail.h fcftalias.h fcftaliastail.h fcobjshash.h
+                    make -C src libfontconfig.la
+                    runHook postBuild
+                  '';
+                  installPhase = ''
+                    runHook preInstall
+                    make -C src install-libLTLIBRARIES
+                    make -C fontconfig install-fontconfigincludeHEADERS
+                    make install-pkgconfigDATA
+                    # no CLI tools on WASI; satisfy the declared outputs
+                    mkdir -p $out $bin
+                    runHook postInstall
+                  '';
+                  postInstall = ''
+                    test -f "''${lib:-$out}/lib/libfontconfig.a"
+                  '';
+                  doCheck = false;
+                })
+              else
+                prev.fontconfig;
           });
           shortRev = builtins.substring 0 7 (lilypond-src.rev or "dirty");
         in

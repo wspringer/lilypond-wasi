@@ -2,6 +2,23 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — checkpoints 4+5+6 DONE: wasi-libffi, wasi-boehmgc, wasi-fontconfig
+
+libffi and boehm-gc: hlolli's patches applied cleanly, built first try
+(libffi's stock wasm backend is Emscripten-only; boehm-gc needed WASI in
+gcconfig.h plus `--disable-threads --disable-cplusplus`).
+
+fontconfig took adaptation — his derivation targets a different fontconfig:
+- his snprintf-configure patch is obsolete in 2.17.1 (dropped upstream);
+- his library-only buildPhase references an `fc-const` dir that no longer
+  exists; 2.17.1 wants `make -C fc-case`, `-C fc-lang`, then the alias +
+  fcobjshash headers in src/, then `libfontconfig.la`;
+- the cache-locks patch (fcntl F_* constants) applied with offsets;
+- multi-output bookkeeping: `bin`/`out` must exist even when empty, and the
+  archive lands in the `lib` output, not `out`.
+Lesson: **his patches transfer; his build phases need re-deriving per
+version.**
+
 ## 2026-08-22 — checkpoints 2+3 DONE: wasi-expat, wasi-freetype
 
 Iteration is minutes now. The recurring WASI pattern is confirmed:
