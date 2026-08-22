@@ -67,6 +67,10 @@
           # (SVG + EPS backends; PDF/PNG need Ghostscript and stay native).
           lilypond = wasi.callPackage ./nix/lilypond.nix { src = source; };
 
+          # Stage 4 — runtime data: Scheme library, ly/ includes, fonts.
+          # Built natively (fontforge/metapost cannot run on the target).
+          assets = pkgs.callPackage ./nix/assets { src = source; };
+
           wasi-deps = pkgs.linkFarm "lilypond-wasi-deps" [
             { name = "zlib"; path = wasi-zlib; }
             { name = "expat"; path = wasi-expat; }

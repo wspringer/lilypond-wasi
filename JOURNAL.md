@@ -2,6 +2,39 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — STAGE 4: SUCCESS CRITERION MET. SVG + EPS engraved on wasm.
+
+`wasmtime -W exceptions=y` with the mounts/env from nix/assets +
+hlolli's runner recipe (see below) engraved test.ly to:
+- `test.svg` (4.2 KB), and
+- `test.cropped.eps` — BoundingBox 0 -37 74 1, **identical to the native
+  pipeline's**, Emmentaler-20 + C059-Roman embedded, renders clean
+  through Ghostscript.
+
+The assets derivation (nix/assets, adapted from hlolli) builds Emmentaler
+natively with fontforge/metapost from OUR source tree, stages scm/ + ly/ +
+text fonts (URW base35 + DejaVu) + fonts.conf — plus `ps/` (the PostScript
+prologs), which the SVG-only original omitted and EPS needs at engrave
+time.
+
+Invocation essentials (full recipe in the runner): mount work dir,
+assets tree at /lilypond, guile's share/guile/3.0 and ccache; env
+LILYPOND_DATADIR=/lilypond, GUILE_LOAD_PATH/=COMPILED_PATH,
+FONTCONFIG_FILE=/lilypond/fonts/fonts.conf, HOME/TMPDIR/XDG_CACHE_HOME
+into the work dir; `--argv0 /lilypond`.
+
+Known warts, non-blocking:
+- EPS run exits nonzero AFTER writing the .eps: the -dcrop pipeline tries
+  a PNG preview via Ghostscript, which our no-subprocess stub fails.
+  Output is complete; fix later (skip png conversion when spawning is
+  unavailable) — candidate patch in scm/backend-library.
+- Auto-compile warnings when the datadir mount is read-only: harmless;
+  the precompiled-bytecode derivation (hlolli's nix/lilypond/bytecode)
+  is the proper fix and also cuts startup time.
+
+Stage 5 remaining: a wrapper script/runner packaging module + assets +
+guile mounts, wasm-opt size trimming maybe, then the lilypond-mcp backend.
+
 ## 2026-08-22 — STAGE 3 COMPLETE: lilypond.wasm links AND RUNS
 
 `nix build .#lilypond` → 62 MB `lilypond.wasm`, and
