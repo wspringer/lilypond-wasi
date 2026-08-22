@@ -367,4 +367,101 @@ else
         doInstallCheck = false;
         meta = allPlatforms old;
       });
+
+    # Never built for wasi (filtered out of guile's inputs below), but they
+    # must at least *evaluate* for guile's argument set to resolve.
+    readline = prev.readline.overrideAttrs (old: { meta = allPlatforms old; });
+    ncurses = prev.ncurses.overrideAttrs (old: { meta = allPlatforms old; });
+
+    # GMP without assembly, and scratch space on the heap instead of
+    # alloca — nested arithmetic can exhaust wasm's fixed stack.
+    gmp = prev.gmp.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ../patches/deps/gmp-wasi.patch ];
+      configureFlags = (old.configureFlags or [ ]) ++ [
+        "--disable-assembly"
+        "--enable-alloca=malloc-reentrant"
+      ];
+      doCheck = false;
+      meta = allPlatforms old;
+    });
+
+    libunistring = prev.libunistring.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ../patches/deps/libunistring-wasi.patch ];
+      # the test helpers' gnulib signal wrapper cannot work on WASI;
+      # build/install only the library (and docs). NB: must go through
+      # makeFlagsArray — a space inside a makeFlags element gets split
+      # into bogus make goals and the install lands empty.
+      preBuild = ''
+        makeFlagsArray+=("SUBDIRS=doc gnulib-local lib")
+      '';
+      doCheck = false;
+      meta = allPlatforms old;
+    });
+
+    # Guile — the boss. hlolli's two patches: guile-wasi (platform support,
+    # no fork/exec/jit) and guile-wasm-callbacks (typed trampolines — wasm
+    # checks indirect-call signatures exactly). Static, single-threaded,
+    # no networking, no posix process API, no loadable modules.
+    guile = (prev.guile.override {
+      inherit (final) boehmgc gmp libffi libunistring;
+    }).overrideAttrs (old: {
+      CFLAGS = "-O2 " + sjljFlags;
+      LIBS = "-lwasi-emulated-signal -lsetjmp";
+      patches =
+        # nixpkgs adds a cross-compilation fix (savannah c117f8e) "until the
+        # next release" — guile 3.0.11 has it merged, so it double-applies.
+        builtins.filter (p: !(lib.hasInfix "c117f8edc471" (baseNameOf (toString p))))
+          (old.patches or [ ])
+        ++ [
+          ../patches/deps/guile/guile-wasi.patch
+          ../patches/deps/guile/guile-wasm-callbacks.patch
+        ];
+      # A static Guile needs no terminal editor or loadable modules;
+      # readline/libtool would drag ncurses and libltdl into the closure.
+      buildInputs =
+        builtins.filter (p: !(builtins.elem (lib.getName p) [ "libtool" "readline" ]))
+          (old.buildInputs or [ ]);
+      propagatedBuildInputs =
+        builtins.filter (p: !(builtins.elem (lib.getName p) [ "libtool" "readline" ]))
+          (old.propagatedBuildInputs or [ ]);
+      nativeBuildInputs =
+        # drop the shell-wrapper hook (target-bash dragger) and the
+        # autoreconfHook (only existed for the c117f8e cross patch; rerun
+        # trips on a missing pkg.m4) — but NOT the cc/pkg-config wrappers!
+        builtins.filter
+          (p: !(lib.hasInfix "shell-wrapper" (p.name or "") || lib.hasInfix "autoreconf" (p.name or "")))
+          (old.nativeBuildInputs or [ ]);
+      configureFlags =
+        builtins.filter (f: !(lib.hasPrefix "--with-libreadline-prefix=" f))
+          (old.configureFlags or [ ])
+        ++ [
+          "--disable-jit"
+          "--disable-lto"
+          "--disable-networking"
+          "--disable-nls"
+          "--disable-posix"
+          "--with-modules=no"
+          "--with-threads=null"
+          "--without-libreadline-prefix"
+          # wasi-libc's UTC-only mktime is sound; gnulib cannot run its
+          # probe while cross-compiling and would pick a larger fallback.
+          "gl_cv_func_working_mktime=yes"
+        ];
+      # WASI has no async signals; the emulation layer keeps Guile's
+      # in-process signal/raise API working synchronously. And its poll.h
+      # knows no priority events — POLLPRI=0 is a no-op bit. (As an env
+      # var, not a configureFlags element: those must not contain spaces.)
+      CPPFLAGS = "-D_WASI_EMULATED_SIGNAL -DPOLLPRI=0";
+      # The target cannot run Guile's installed helper programs; keep the
+      # static library, headers, and Scheme files for later links.
+      postInstall = ''
+        test -f "$out/lib/libguile-3.0.a"
+        rm -rf "$out/bin"
+        find "$out/lib" -type f \( -name '*.so' -o -name '*.so.*' -o -name '*.dylib' \) -delete
+        for o in $outputs; do mkdir -p ''${!o}; done
+      '';
+      doCheck = false;
+      doInstallCheck = false;
+      meta = allPlatforms old;
+    });
   }

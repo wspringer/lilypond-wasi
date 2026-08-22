@@ -58,6 +58,8 @@
           wasi-glib = wasi.glib;
           wasi-fribidi = wasi.fribidi;
           wasi-harfbuzz = wasi.harfbuzz;
+          wasi-gmp = wasi.gmp;
+          wasi-libunistring = wasi.libunistring;
           wasi-pango = wasi.pango;
           wasi-guile = wasi.guile;
 

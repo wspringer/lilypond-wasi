@@ -2,6 +2,33 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — checkpoint 9 DONE: wasi-guile. STAGE 2 COMPLETE.
+
+`libguile-3.0.a`, members verified `\0asm`. `nix build .#wasi-deps` links
+the whole nine-package farm. Seven rounds against the boss:
+
+1. nixpkgs' savannah c117f8e cross patch is already merged in guile 3.0.11
+   → filter it from old.patches (and drop the autoreconfHook that existed
+   only for it; rerunning autoconf dies on missing pkg.m4).
+2. gmp: hlolli's patch + --disable-assembly + alloca on the heap. Clean.
+3. libunistring: skip the test helpers (gnulib signal wrapper). BUT a
+   space inside a makeFlags element silently becomes extra make goals and
+   installs NOTHING — use `makeFlagsArray+=(...)` in preBuild.
+4. guile configure: my nativeBuildInputs filter on "wrapper" also removed
+   the *pkg-config wrapper* → libffi undetectable. Filter "shell-wrapper".
+5. ports.c: POLLPRI doesn't exist in wasi-libc's poll.h → -DPOLLPRI=0.
+6. …which, added inside a configureFlags element, hit the SAME
+   spaces-in-list trap as (3). CPPFLAGS as an env attr instead.
+7. Victory.
+
+**Rule now twice-paid: no spaces inside nix list elements — makeFlags,
+configureFlags, any of them.**
+
+Stage 3 is next: cross-configure the patched LilyPond source (SVG backend
+only) against this stack. Remember from hlolli: the final linked module
+needs `wasm-opt --fpcast-emu` (GObject/Pango callback casts) and an
+EH-capable engine (sjlj/exnref).
+
 ## 2026-08-22 — checkpoint 8 DONE: wasi-pango (+ harfbuzz, fribidi)
 
 - EH-format unification: every archive in the stack now compiles with the
