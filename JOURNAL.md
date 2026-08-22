@@ -2,6 +2,14 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — module size: 59 MB -> 12.9 MB (3.6 MB gzipped)
+
+`wasm-opt --strip-debug -Os` on top of the correctness passes; ~78% of
+the module was DWARF. Engraved EPS verified byte-identical before and
+after; now baked into nix/lilypond.nix (with explicit --enable-* feature
+flags so binaryen parses the EH opcodes). Deliverable footprint: ~13 MB
+engine + 13 MB assets + Guile Scheme tree; <10 MB compressed transport.
+
 ## 2026-08-22 — field test in InDesign: EPS out, PDF in
 
 Placing the wasm-engraved EPS in InDesign: **glyphs vanish** — InDesign

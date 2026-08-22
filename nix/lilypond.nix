@@ -118,7 +118,12 @@ stdenv.mkDerivation {
     # wasm checks indirect-call types exactly.
     # --spill-pointers: keep pointer locals visible in linear memory for
     # boehm-gc's conservative scan.
-    wasm-opt --fpcast-emu --spill-pointers \
+    # --strip-debug -Os: 59 MB -> 13 MB (3.6 MB gzipped), engraved output
+    # verified byte-identical (JOURNAL.md 2026-08-22).
+    wasm-opt --fpcast-emu --spill-pointers --strip-debug -Os \
+      --enable-exception-handling --enable-bulk-memory \
+      --enable-nontrapping-float-to-int --enable-sign-ext \
+      --enable-multivalue --enable-reference-types \
       lily/out/lilypond \
       -o lilypond.wasm
 
