@@ -56,6 +56,77 @@
                 })
               else
                 prev.zlib;
+
+            # A pattern to expect everywhere: libraries cross-compile fine,
+            # but packages' auxiliary command-line tools trip over POSIX APIs
+            # WASI lacks (clock, chown, ...). Disable or defang the tools.
+            expat =
+              if prev.stdenv.hostPlatform.isWasi then
+                prev.expat.overrideAttrs (old: {
+                  # the benchmark tool needs clock(); skip tools entirely
+                  configureFlags = (old.configureFlags or [ ]) ++ [
+                    "--without-tests"
+                    "--without-examples"
+                    "--without-xmlwf"
+                  ];
+                })
+              else
+                prev.expat;
+
+            brotli =
+              if prev.stdenv.hostPlatform.isWasi then
+                prev.brotli.overrideAttrs (old: {
+                  # the brotli CLI calls chown() (absent from wasi-libc) and
+                  # clock() (needs the emulation library)
+                  postPatch = (old.postPatch or "") + ''
+                    sed -i '1i #define chown(p,o,g) 0' c/tools/brotli.c
+                  '';
+                  env = (old.env or { }) // {
+                    NIX_CFLAGS_COMPILE = "-D_WASI_EMULATED_PROCESS_CLOCKS";
+                    NIX_LDFLAGS = "-lwasi-emulated-process-clocks";
+                  };
+                })
+              else
+                prev.brotli;
+
+            # libpng needs setjmp/longjmp — wasm's exception-handling
+            # proposal, a battle we only intend to fight once, for Guile.
+            # FreeType uses libpng solely for color-emoji (SBIX/CBDT) glyphs
+            # and brotli solely for WOFF2 — an SVG music engraver needs
+            # neither, so build FreeType lean instead.
+            freetype =
+              if prev.stdenv.hostPlatform.isWasi then
+                prev.freetype.overrideAttrs (old: {
+                  buildInputs = [ ];
+                  propagatedBuildInputs = [ final.zlib ];
+                  configureFlags =
+                    # freetype-config would drag a *target* pkg-config and
+                    # bash into the closure (see postInstall upstream);
+                    # nothing needs the script.
+                    builtins.filter (f: f != "--enable-freetype-config") (old.configureFlags or [ ])
+                    ++ [
+                      "--with-png=no"
+                      "--with-brotli=no"
+                      "--with-harfbuzz=no"
+                      "--with-bzip2=no"
+                    ];
+                  postInstall = "";
+                  # makeWrapper's shell-wrapper hook exists only to wrap
+                  # freetype-config, and drags a (broken) target-platform
+                  # bash into the closure.
+                  nativeBuildInputs =
+                    builtins.filter (d: !(nixpkgs.lib.hasInfix "wrapper" (d.name or "")))
+                      (old.nativeBuildInputs or [ ]);
+                  # FreeType's validators use setjmp, which wasm only has via
+                  # the exception-handling proposal. NOTE: objects built this
+                  # way need an EH-capable engine (recent wasmtime) at runtime.
+                  # Guile will need the same treatment — this is the pattern.
+                  env = (old.env or { }) // {
+                    NIX_CFLAGS_COMPILE = "-mexception-handling -mllvm -wasm-enable-sjlj";
+                  };
+                })
+              else
+                prev.freetype;
           });
           shortRev = builtins.substring 0 7 (lilypond-src.rev or "dirty");
         in

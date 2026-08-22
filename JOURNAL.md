@@ -2,6 +2,28 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — checkpoints 2+3 DONE: wasi-expat, wasi-freetype
+
+Iteration is minutes now. The recurring WASI pattern is confirmed:
+**libraries build; the packages' auxiliary CLI tools break** on POSIX APIs
+wasi-libc lacks. Fixes, all in the overlay:
+
+- expat: `--without-tests --without-examples --without-xmlwf` (benchmark
+  needs `clock()`).
+- brotli: `#define chown(p,o,g) 0` for the CLI plus
+  `-D_WASI_EMULATED_PROCESS_CLOCKS` / `-lwasi-emulated-process-clocks` —
+  the wasi-libc emulation libraries are the idiomatic fix for clock/signal.
+- freetype: built **lean** — no libpng (color-emoji glyphs), no brotli
+  (WOFF2), no bzip2 (.pcf.bz2), none needed for SVG engraving. Killed
+  `freetype-config` (its postInstall references a *target-platform*
+  pkg-config, and makeWrapper's hook drags in a broken target bash).
+- **setjmp reached earlier than expected**: FreeType's validators use it,
+  not just Guile. wasi-libc gates `<setjmp.h>` on
+  `__wasm_exception_handling__`; building with
+  `-mexception-handling -mllvm -wasm-enable-sjlj` works. Consequence:
+  those objects require an EH-capable engine at runtime (recent wasmtime).
+  This is the template for the Guile fight.
+
 ## 2026-08-22 — checkpoint 1 DONE: wasi-zlib builds (and the great overlay confession)
 
 `nix build .#wasi-zlib` → `libz.a` whose members start with `\0asm`. Three
