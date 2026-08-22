@@ -56,6 +56,8 @@
           wasi-boehmgc = wasi.boehmgc;
           wasi-fontconfig = wasi.fontconfig;
           wasi-glib = wasi.glib;
+          wasi-fribidi = wasi.fribidi;
+          wasi-harfbuzz = wasi.harfbuzz;
           wasi-pango = wasi.pango;
           wasi-guile = wasi.guile;
 

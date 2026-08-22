@@ -20,6 +20,17 @@
 if !prev.stdenv.hostPlatform.isWasi then
   { }
 else
+  let
+    # One exception format for every archive in the stack: setjmp/longjmp
+    # lowered via wasm EH (sjlj), modern exnref encoding, and the target
+    # feature enabled so wasi-libc's <setjmp.h> gate opens. Mixing formats
+    # across static archives breaks the final link.
+    sjljFlags = "-mexception-handling -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false";
+    allPlatforms = old: (old.meta or { }) // {
+      platforms = lib.platforms.all;
+      badPlatforms = [ ];
+    };
+  in
   {
     zlib = prev.zlib.overrideAttrs (old: {
       # gz* file layer uses errno without including <errno.h>
@@ -73,7 +84,7 @@ else
           (old.nativeBuildInputs or [ ]);
       # FreeType's validators use setjmp
       env = (old.env or { }) // {
-        NIX_CFLAGS_COMPILE = "-mexception-handling -mllvm -wasm-enable-sjlj";
+        NIX_CFLAGS_COMPILE = sjljFlags;
       };
     });
 
@@ -105,8 +116,7 @@ else
         ../patches/deps/fontconfig-0001-wasi-cache-locks.patch
       ];
       env = (old.env or { }) // {
-        CFLAGS = (old.env.CFLAGS or "")
-          + " -O2 -DFC_NO_MT -mexception-handling -mllvm -wasm-enable-sjlj";
+        CFLAGS = (old.env.CFLAGS or "") + " -O2 -DFC_NO_MT " + sjljFlags;
         ac_cv_va_copy = "C99";
         fc_cv_c99_vsnprintf = "yes";
       };
@@ -243,9 +253,118 @@ else
       doCheck = false;
       doInstallCheck = false;
       # upstream meta says wasi is unsupported; the patch series disagrees
-      meta = (old.meta or { }) // {
-        platforms = lib.platforms.all;
-        badPlatforms = [ ];
-      };
+      meta = allPlatforms old;
     });
+
+    # FriBidi, static and tool-less (hlolli's recipe).
+    fribidi = prev.fribidi.overrideAttrs (old: {
+      mesonFlags = (old.mesonFlags or [ ]) ++ [
+        "-Dbin=false"
+        "-Ddefault_library=static"
+        "-Ddocs=false"
+        "-Dtests=false"
+      ];
+      postInstall = (old.postInstall or "") + ''
+        for o in $outputs; do mkdir -p ''${!o}; done
+      '';
+      doCheck = false;
+      doInstallCheck = false;
+      meta = allPlatforms old;
+    });
+
+    # HarfBuzz against our lean FreeType only — no cairo/icu/graphite/glib.
+    # Includes FreeType headers, hence the shared sjlj/EH flags.
+    harfbuzz =
+      (prev.harfbuzz.override {
+        freetype = final.freetype;
+        withCoreText = false;
+        withGraphite2 = false;
+        withIcu = false;
+        withIntrospection = false;
+      }).overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [
+          ../patches/deps/harfbuzz/0001-wasi-single-thread-and-stdio.patch
+        ];
+        buildInputs = [ final.freetype ];
+        propagatedBuildInputs = [ final.freetype ];
+        env = (old.env or { }) // {
+          NIX_CFLAGS_COMPILE = (old.env.NIX_CFLAGS_COMPILE or "")
+            + " -DHB_NO_MT -DHB_NO_MMAP " + sjljFlags;
+        };
+        mesonFlags = [
+          "-Dbenchmark=disabled"
+          "-Dcairo=disabled"
+          "-Dchafa=disabled"
+          "-Dcoretext=disabled"
+          "-Ddefault_library=static"
+          "-Ddirectwrite=disabled"
+          "-Ddocs=disabled"
+          "-Dfontations=disabled"
+          "-Dfreetype=enabled"
+          "-Dgdi=disabled"
+          "-Dglib=disabled"
+          "-Dgobject=disabled"
+          "-Dgraphite=disabled"
+          "-Dgraphite2=disabled"
+          "-Dharfrust=disabled"
+          "-Dicu=disabled"
+          "-Dintrospection=disabled"
+          "-Dkbts=disabled"
+          "-Dtests=disabled"
+          "-Dutilities=disabled"
+          "-Dwasm=disabled"
+          "-Dwith_libstdcxx=false"
+        ];
+        postInstall = (old.postInstall or "") + ''
+          # satisfy declared outputs (devdoc) the doc-less build never fills
+          for o in $outputs; do mkdir -p ''${!o}; done
+        '';
+        doCheck = false;
+        doInstallCheck = false;
+        meta = allPlatforms old;
+      });
+
+    # Pango (hlolli's three patches: skip target tools, synchronous
+    # fontconfig, stdio locks). Cairo-less; LilyPond's SVG backend does its
+    # own drawing and needs pango only for text shaping/metrics.
+    pango =
+      (prev.pango.override {
+        withIntrospection = false;
+        x11Support = false;
+      }).overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [
+          ../patches/deps/pango/0001-wasi-skip-target-tools.patch
+          ../patches/deps/pango/0002-wasi-synchronous-fontconfig.patch
+          ../patches/deps/pango/0003-wasi-stdio-locks.patch
+        ];
+        buildInputs = with final; [ fontconfig freetype fribidi glib harfbuzz ];
+        propagatedBuildInputs = with final; [ fontconfig freetype fribidi glib harfbuzz ];
+        # nixpkgs points FONTCONFIG_FILE at a native test font set; keep
+        # that closure out of a cross build that runs no target programs.
+        env = builtins.removeAttrs (old.env or { }) [ "FONTCONFIG_FILE" ] // {
+          NIX_CFLAGS_COMPILE = sjljFlags;
+        };
+        FONTCONFIG_FILE = null;
+        mesonFlags = [
+          "-Dbuild-examples=false"
+          "-Dbuild-testsuite=false"
+          "-Dcairo=disabled"
+          "-Ddefault_library=static"
+          "-Ddocumentation=false"
+          "-Dfontconfig=enabled"
+          "-Dfreetype=enabled"
+          "-Dintrospection=disabled"
+          "-Dlibthai=disabled"
+          "-Dman-pages=false"
+          "-Dsysprof=disabled"
+          "-Dxft=disabled"
+        ];
+        postInstall = (old.postInstall or "") + ''
+          # tools skipped on WASI; satisfy the declared outputs
+          for o in $outputs; do mkdir -p ''${!o}; done
+        '';
+        doCheck = false;
+        doInstallCheck = false;
+        meta = allPlatforms old;
+      });
   }

@@ -2,6 +2,24 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — checkpoint 8 DONE: wasi-pango (+ harfbuzz, fribidi)
+
+- EH-format unification: every archive in the stack now compiles with the
+  same `-mexception-handling -mllvm -wasm-enable-sjlj -mllvm
+  -wasm-use-legacy-eh=false` (mixing formats breaks the final link; hlolli's
+  harfbuzz notes this). freetype/fontconfig rebuilt to match.
+- harfbuzz 12.3.0: hlolli's meson flag list needed pruning (png/raster/
+  subset/vector/zlib options no longer exist) and chafa=disabled added.
+- pango: nixpkgs sets `env.FONTCONFIG_FILE = makeFontsConf ...` which drags
+  a fonts.conf derivation that tries to read our (empty) fontconfig $out —
+  and replacing `env` wholesale did NOT remove it; needed explicit
+  `FONTCONFIG_FILE = null` at the top level of overrideAttrs.
+- The empty-declared-output dance (`for o in $outputs; do mkdir -p ...`)
+  is now the standard closing move for every tool-less library build.
+
+Remaining: guile — the boss. hlolli's kit: guile-wasi.patch,
+guile-wasm-callbacks.patch, plus gmp-wasi.patch and libunistring-wasi.patch.
+
 ## 2026-08-22 — checkpoint 7 DONE: wasi-glib (libglib + libgobject + libgio)
 
 The hardest adaptation yet. hlolli's nine-patch series was written for an
