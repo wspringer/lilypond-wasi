@@ -36,12 +36,26 @@
           # collects the fixes needed to make it actually build.
           wasi = pkgs.pkgsCross.wasi32.extend (final: prev: {
             # zlib's gz* file layer uses errno without including <errno.h>,
-            # which wasi-libc does not forgive.
-            zlib = prev.zlib.overrideAttrs (old: {
-              postPatch = (old.postPatch or "") + ''
-                sed -i '1i #include <errno.h>' gzguts.h
-              '';
-            });
+            # which wasi-libc does not forgive; and its configure probes for
+            # --undefined-version, a GNU-ld flag wasm-ld rejects when the
+            # example binaries link.
+            # IMPORTANT: overlays apply to every stage of the cross package
+            # set, so this must be scoped to the wasi target — patching the
+            # native zlib too changes its hash and cascades into rebuilding
+            # the entire native toolchain (LLVM links zlib). See JOURNAL.md.
+            zlib =
+              if prev.stdenv.hostPlatform.isWasi then
+                prev.zlib.overrideAttrs (old: {
+                  postPatch = (old.postPatch or "") + ''
+                    sed -i '1i #include <errno.h>' gzguts.h
+                  '';
+                  # nixpkgs sets NIX_LDFLAGS = "--undefined-version" whenever
+                  # the linker is lld >= 16 (zlib issue #960 workaround), but
+                  # wasm-ld — also lld — rejects that flag.
+                  env = (old.env or { }) // { NIX_LDFLAGS = ""; };
+                })
+              else
+                prev.zlib;
           });
           shortRev = builtins.substring 0 7 (lilypond-src.rev or "dirty");
         in

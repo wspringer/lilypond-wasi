@@ -2,6 +2,28 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — checkpoint 1 DONE: wasi-zlib builds (and the great overlay confession)
+
+`nix build .#wasi-zlib` → `libz.a` whose members start with `\0asm`. Three
+fixes, all in the flake overlay:
+
+1. `#include <errno.h>` into gzguts.h (wasi-libc strictness);
+2. `NIX_LDFLAGS = ""` — nixpkgs' zlib sets `--undefined-version` whenever
+   the linker is lld ≥ 16 (zlib#960 workaround); wasm-ld *is* lld but
+   rejects the flag. The failure only hits the example binaries, but that
+   fails the build. (A sed on `configure` was the wrong fix — the flag came
+   from the derivation env, not configure.)
+3. **Scope overlays to the wasi target.** An unscoped `zlib = ...` in the
+   overlay also replaced the *native* zlib — native LLVM links zlib, so the
+   entire native toolchain rebuilt from source. Nearly all of the ~5h of
+   LLVM/clang grinding across both pins was this, self-inflicted, not an
+   inherent cross-compilation cost. With the overlay guarded by
+   `prev.stdenv.hostPlatform.isWasi`, the same build needed **1 local
+   derivation** + 139 MiB of cache downloads.
+
+Also: a transient `nix build` exit-1 after an LLVM pass (cause unknown,
+disk fine); resuming was lossless.
+
 ## 2026-08-21 — nixpkgs repinned to hlolli's rev; first build abandoned
 
 The `wasi-zlib` build on nixos-unstable (`ffb3c9b`) ran ~2.5h through the
