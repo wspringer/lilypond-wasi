@@ -2,6 +2,29 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — checkpoint 7 DONE: wasi-glib (libglib + libgobject + libgio)
+
+The hardest adaptation yet. hlolli's nine-patch series was written for an
+older glib; ours is 2.86.3. What changed:
+
+- his 0001 hunks: `process_spawn_allowed` no longer exists (spawn is
+  auto-detected); `subdir()` list moved. Regenerated.
+- patches 0002–0009 squashed into one `0002-wasi-support.patch`,
+  **generated against nixpkgs-patched source** — nixpkgs' own glib patches
+  (split-dev-programs, gdb_script) change gobject/meson.build context, so
+  patching against pristine source fails in the sandbox. (Also: gdb_script
+  has a malformed second diff header GNU patch <2.8 can't parse locally.)
+- 2.86.3-specific fixes: three-way guard in g_on_error_stack_trace (the
+  non-unix branch is Windows-only code), g_test_trap_fork guard,
+  gobject-query wrapped, and **gspawn-posix.c excluded from wasi sources**
+  — g_spawn_* stays unresolved in the archive; the final module must not
+  reference it.
+- pcre2: library-only build (pcre2grep needs fork/sys/wait.h).
+- Beware `.orig`/`.rej` litter when regenerating patches from a scratch
+  tree — it ends up inside `git diff` and breaks sandbox patching.
+
+Remaining: pango (needs harfbuzz + fribidi), then guile — the boss.
+
 ## 2026-08-22 — checkpoints 4+5+6 DONE: wasi-libffi, wasi-boehmgc, wasi-fontconfig
 
 libffi and boehm-gc: hlolli's patches applied cleanly, built first try

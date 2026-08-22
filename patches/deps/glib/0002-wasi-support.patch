@@ -1,0 +1,893 @@
+WASI support for GLib 2.86.3.
+
+Squash of patches 0002-0009 from hlolli/lilypond-wasm (GPL-3.0-or-later),
+re-derived for glib 2.86.3 on top of nixpkgs' glib patches.
+
+diff --git a/gio/gio.h b/gio/gio.h
+index c17657d..9d19ecc 100644
+--- a/gio/gio.h
++++ b/gio/gio.h
+@@ -27,6 +27,14 @@
+ 
+ #include <gio/giotypes.h>
+ 
++#ifdef __wasi__
++
++/* Pango uses GListModel and the GIO error domain for its font-map API. */
++#include <gio/gioerror.h>
++#include <gio/glistmodel.h>
++
++#else
++
+ #include <gio/gaction.h>
+ #include <gio/gactiongroup.h>
+ #include <gio/gactiongroupexporter.h>
+@@ -181,6 +189,8 @@
+ 
+ #include <gio/gio-autocleanups.h>
+ 
++#endif
++
+ #undef __GIO_GIO_H_INSIDE__
+ 
+ #endif /* __G_IO_H__ */
+diff --git a/gio/meson.build b/gio/meson.build
+index ffebec8..32d3d68 100644
+--- a/gio/meson.build
++++ b/gio/meson.build
+@@ -1,3 +1,64 @@
++if host_system == 'wasi'
++  # Pango needs GListModel and the GIO error domain for its font-map API. Keep
++  # those parts, but leave out files, sockets, D-Bus, modules, and tools.
++  gio_includedir = glib_includedir / 'gio'
++  gio_headers = files(
++    'gio.h',
++    'gioenums.h',
++    'gioerror.h',
++    'giotypes.h',
++    'glistmodel.h',
++  )
++
++  gio_visibility_h = custom_target(
++    output: 'gio-visibility.h',
++    command: [
++      gen_visibility_macros,
++      meson.project_version(),
++      'visibility-macros',
++      'GIO',
++      '@OUTPUT@',
++    ],
++    install: true,
++    install_dir: gio_includedir,
++  )
++
++  install_headers(gio_headers, install_dir: gio_includedir)
++
++  libgio = library(
++    'gio-2.0',
++    'gioerror.c',
++    'glistmodel.c',
++    'gmarshal-internal.c',
++    gio_visibility_h,
++    version: library_version,
++    soversion: soversion,
++    install: true,
++    include_directories: [configinc, gioinc],
++    dependencies: [libglib_dep, libgobject_dep],
++    c_args: ['-DGIO_COMPILATION'],
++    gnu_symbol_visibility: 'hidden',
++    link_args: glib_link_flags,
++  )
++  libgio_dep = declare_dependency(
++    link_with: libgio,
++    dependencies: [libgobject_dep],
++    include_directories: [gioinc],
++  )
++
++  pkg.generate(
++    libgio,
++    requires: ['glib-2.0', 'gobject-2.0'],
++    version: glib_version,
++    install_dir: glib_pkgconfigreldir,
++    filebase: 'gio-2.0',
++    name: 'GIO WASI list model subset',
++    description: 'GListModel support for static WASI builds',
++  )
++  meson.override_dependency('gio-2.0', libgio_dep)
++  subdir_done()
++endif
++
+ gio_c_args = [
+   '-DG_LOG_DOMAIN="GLib-GIO"',
+   '-DGIO_LAUNCH_DESKTOP="@0@"'.format(glib_prefix / multiarch_libexecdir / 'gio-launch-desktop'),
+diff --git a/glib/gbacktrace.c b/glib/gbacktrace.c
+index 19923ae..b470cb1 100644
+--- a/glib/gbacktrace.c
++++ b/glib/gbacktrace.c
+@@ -45,14 +45,16 @@
+ #include <time.h>
+ 
+ #ifdef G_OS_UNIX
+-#include "glib-unixprivate.h"
+ #include <errno.h>
+ #include <unistd.h>
++#ifndef __wasi__
++#include "glib-unixprivate.h"
+ #include <sys/wait.h>
+ #ifdef HAVE_SYS_SELECT_H
+ #include <sys/select.h>
+ #endif /* HAVE_SYS_SELECT_H */
+ #endif
++#endif
+ 
+ #include <string.h>
+ 
+@@ -248,7 +250,7 @@ g_on_error_query (const gchar *prg_name)
+ void
+ g_on_error_stack_trace (const gchar *prg_name)
+ {
+-#if defined(G_OS_UNIX)
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+   pid_t pid;
+   gchar buf[16];
+   gchar buf2[64];
+@@ -299,6 +301,9 @@ g_on_error_stack_trace (const gchar *prg_name)
+       else if (WIFEXITED (status) || WIFSIGNALED (status))
+         break;
+     }
++#elif defined(__wasi__)
++  /* no stack-trace support on WASI */
++  g_abort ();
+ #else
+   if (IsDebuggerPresent ())
+     G_BREAKPOINT ();
+@@ -307,7 +312,7 @@ g_on_error_stack_trace (const gchar *prg_name)
+ #endif
+ }
+ 
+-#ifndef G_OS_WIN32
++#if !defined(G_OS_WIN32) && !defined(__wasi__)
+ 
+ static gboolean stack_trace_done = FALSE;
+ 
+diff --git a/glib/gdate.c b/glib/gdate.c
+index 8aca2b1..80bc4b0 100644
+--- a/glib/gdate.c
++++ b/glib/gdate.c
+@@ -1398,7 +1398,9 @@ _g_localtime (time_t timet, struct tm *out_tm)
+   gboolean success = TRUE;
+ 
+ #ifdef HAVE_LOCALTIME_R
++#ifndef __wasi__
+   tzset ();
++#endif
+   if (!localtime_r (&timet, out_tm))
+     success = FALSE;
+ #else
+diff --git a/glib/gfileutils.c b/glib/gfileutils.c
+index 8b70ddd..a4852d0 100644
+--- a/glib/gfileutils.c
++++ b/glib/gfileutils.c
+@@ -426,6 +426,9 @@ g_file_test (const gchar *filename,
+   
+   if ((test & G_FILE_TEST_IS_EXECUTABLE) && (access (filename, X_OK) == 0))
+     {
++#ifdef __wasi__
++      return TRUE;
++#else
+       if (getuid () != 0)
+ 	return TRUE;
+ 
+@@ -433,6 +436,7 @@ g_file_test (const gchar *filename,
+        * will succeed even if no executable bits are set on the
+        * file. We fall through to a stat test to avoid that.
+        */
++#endif
+     }
+   else
+     test &= ~G_FILE_TEST_IS_EXECUTABLE;
+diff --git a/glib/ggettext.c b/glib/ggettext.c
+index 78b8e64..2f5969c 100644
+--- a/glib/ggettext.c
++++ b/glib/ggettext.c
+@@ -42,7 +42,9 @@
+ 
+ #include <string.h>
+ #include <locale.h>
++#ifndef __wasi__
+ #include <libintl.h>
++#endif
+ 
+ #ifdef G_OS_WIN32
+ 
+diff --git a/glib/gi18n-lib.h b/glib/gi18n-lib.h
+index fe9e79d..09265bf 100644
+--- a/glib/gi18n-lib.h
++++ b/glib/gi18n-lib.h
+@@ -22,7 +22,9 @@
+ 
+ #include <glib.h>
+ 
++#ifndef __wasi__
+ #include <libintl.h>
++#endif
+ #include <string.h>
+ 
+ #ifndef GETTEXT_PACKAGE
+diff --git a/glib/gi18n.h b/glib/gi18n.h
+index dbb2cb3..3942ee7 100644
+--- a/glib/gi18n.h
++++ b/glib/gi18n.h
+@@ -22,10 +22,16 @@
+ 
+ #include <glib.h>
+ 
++#ifndef __wasi__
+ #include <libintl.h>
++#endif
+ #include <string.h>
+ 
++#ifdef __wasi__
++#define  _(String) (String)
++#else
+ #define  _(String) gettext (String)
++#endif
+ #define Q_(String) g_dpgettext (NULL, String, 0)
+ #define N_(String) (String)
+ #define C_(Context,String) g_dpgettext (NULL, Context "\004" String, strlen (Context) + 1)
+diff --git a/glib/glib-unix.c b/glib/glib-unix.c
+index 6b34234..b01f1e6 100644
+--- a/glib/glib-unix.c
++++ b/glib/glib-unix.c
+@@ -49,14 +49,16 @@
+ #include <stdlib.h>   /* for fdwalk */
+ #include <string.h>
+ #include <sys/types.h>
++#ifndef __wasi__
+ #include <pwd.h>
++#endif
+ #include <unistd.h>
+ 
+ #if defined(__linux__) || defined(__DragonFly__)
+ #include <sys/syscall.h>  /* for syscall and SYS_getdents64 */
+ #endif
+ 
+-#ifdef HAVE_SYS_RESOURCE_H
++#if defined(HAVE_SYS_RESOURCE_H) && !defined(__wasi__)
+ #include <sys/resource.h>
+ #endif /* HAVE_SYS_RESOURCE_H */
+ 
+@@ -453,6 +455,13 @@ struct passwd *
+ g_unix_get_passwd_entry (const gchar  *user_name,
+                          GError      **error)
+ {
++#ifdef __wasi__
++  g_return_val_if_fail (user_name != NULL, NULL);
++  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
++
++  g_unix_set_error_from_errno (error, ENOSYS);
++  return NULL;
++#else
+   struct passwd *passwd_file_entry;
+   struct
+     {
+@@ -541,6 +550,7 @@ g_unix_get_passwd_entry (const gchar  *user_name,
+     }
+ 
+   return (struct passwd *) g_steal_pointer (&buffer);
++#endif
+ }
+ 
+ /* This function is called between fork() and exec() and hence must be
+diff --git a/glib/glib-unix.h b/glib/glib-unix.h
+index d455182..c2d67be 100644
+--- a/glib/glib-unix.h
++++ b/glib/glib-unix.h
+@@ -29,7 +29,9 @@
+  */
+ #include <unistd.h>
+ #include <errno.h>
++#ifndef __wasi__
+ #include <sys/wait.h>
++#endif
+ #include <stdlib.h>
+ #include <fcntl.h>
+ 
+diff --git a/glib/glib-unixprivate.h b/glib/glib-unixprivate.h
+index fa13fe8..c3e3117 100644
+--- a/glib/glib-unixprivate.h
++++ b/glib/glib-unixprivate.h
+@@ -44,6 +44,13 @@ g_unix_open_pipe_internal (int *fds,
+                            gboolean close_on_exec,
+                            gboolean nonblock)
+   {
++#ifdef __wasi__
++  (void) fds;
++  (void) close_on_exec;
++  (void) nonblock;
++  errno = ENOSYS;
++  return FALSE;
++#else
+ #ifdef HAVE_PIPE2
+   do
+     {
+@@ -110,6 +117,7 @@ g_unix_open_pipe_internal (int *fds,
+     }
+ 
+   return TRUE;
++#endif
+ }
+ 
+ G_END_DECLS
+diff --git a/glib/gmain.c b/glib/gmain.c
+index 2d65017..8627493 100644
+--- a/glib/gmain.c
++++ b/glib/gmain.c
+@@ -370,11 +370,11 @@ static gboolean g_child_watch_dispatch (GSource     *source,
+ 					gpointer     user_data);
+ static void     g_child_watch_finalize (GSource     *source);
+ 
+-#ifndef G_OS_WIN32
++#if !defined(G_OS_WIN32) && !defined(__wasi__)
+ static void unref_unix_signal_handler_unlocked (int signum);
+ #endif
+ 
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+ static void g_unix_signal_handler (int signum);
+ static gboolean g_unix_signal_watch_prepare  (GSource     *source,
+ 					      gint        *timeout);
+@@ -405,7 +405,7 @@ static GRWLock source_destroy_lock;
+ 
+ static GMainContext *glib_worker_context;
+ 
+-#ifndef G_OS_WIN32
++#if !defined(G_OS_WIN32) && !defined(__wasi__)
+ 
+ 
+ /* UNIX signals work by marking one of these variables then waking the
+@@ -5682,7 +5682,9 @@ static gboolean
+ g_child_watch_prepare (GSource *source,
+ 		       gint    *timeout)
+ {
+-#ifdef G_OS_WIN32
++#ifdef __wasi__
++  return FALSE;
++#elif defined(G_OS_WIN32)
+   return FALSE;
+ #else  /* G_OS_WIN32 */
+   {
+@@ -5706,7 +5708,9 @@ g_child_watch_check (GSource *source)
+ 
+   child_watch_source = (GChildWatchSource *) source;
+ 
+-#ifdef G_OS_WIN32
++#ifdef __wasi__
++  child_exited = FALSE;
++#elif defined(G_OS_WIN32)
+   child_exited = !!(child_watch_source->poll.revents & G_IO_IN);
+ #else /* G_OS_WIN32 */
+ #ifdef HAVE_PIDFD
+@@ -5725,7 +5729,7 @@ g_child_watch_check (GSource *source)
+ static void
+ g_child_watch_finalize (GSource *source)
+ {
+-#ifndef G_OS_WIN32
++#if !defined(G_OS_WIN32) && !defined(__wasi__)
+   GChildWatchSource *child_watch_source = (GChildWatchSource *) source;
+ 
+   if (child_watch_source->poll.fd >= 0)
+@@ -5741,7 +5745,7 @@ g_child_watch_finalize (GSource *source)
+ #endif /* G_OS_WIN32 */
+ }
+ 
+-#ifndef G_OS_WIN32
++#if !defined(G_OS_WIN32) && !defined(__wasi__)
+ 
+ static void
+ wake_source (GSource *source)
+@@ -6036,6 +6040,43 @@ g_unix_signal_watch_finalize (GSource    *source)
+ 
+ #endif /* G_OS_WIN32 */
+ 
++#ifdef __wasi__
++static gboolean
++g_wasi_unsupported_source_prepare (GSource *source,
++                                   gint    *timeout)
++{
++  return FALSE;
++}
++
++static gboolean
++g_wasi_unsupported_source_check (GSource *source)
++{
++  return FALSE;
++}
++
++static gboolean
++g_wasi_unsupported_source_dispatch (GSource     *source,
++                                    GSourceFunc  callback,
++                                    gpointer     user_data)
++{
++  return FALSE;
++}
++
++static GSourceFuncs g_wasi_unsupported_source_funcs = {
++  g_wasi_unsupported_source_prepare,
++  g_wasi_unsupported_source_check,
++  g_wasi_unsupported_source_dispatch,
++  NULL, NULL, NULL
++};
++
++GSource *
++_g_main_create_unix_signal_watch (int signum)
++{
++  g_warning ("Unix signal watches are unavailable on WASI");
++  return g_source_new (&g_wasi_unsupported_source_funcs, sizeof (GSource));
++}
++#endif
++
+ static gboolean
+ g_child_watch_dispatch (GSource    *source, 
+ 			GSourceFunc callback,
+@@ -6052,7 +6093,9 @@ g_child_watch_dispatch (GSource    *source,
+    * is invoked; or, if the caller calls g_source_destroy() without the callback
+    * being dispatched, the process is still not reaped. */
+ 
+-#ifdef G_OS_WIN32
++#ifdef __wasi__
++  wait_status = -1;
++#elif defined(G_OS_WIN32)
+   {
+     DWORD child_status;
+ 
+@@ -6174,7 +6217,7 @@ g_child_watch_dispatch (GSource    *source,
+   return FALSE;
+ }
+ 
+-#ifndef G_OS_WIN32
++#if !defined(G_OS_WIN32) && !defined(__wasi__)
+ 
+ static void
+ g_unix_signal_handler (int signum)
+@@ -6268,7 +6311,11 @@ g_child_watch_source_new (GPid pid)
+ 
+   child_watch_source->pid = pid;
+ 
+-#ifdef G_OS_WIN32
++#ifdef __wasi__
++  g_warning ("Child watches are unavailable on WASI");
++  child_watch_source->poll.fd = -1;
++  child_watch_source->child_maybe_exited = FALSE;
++#elif defined(G_OS_WIN32)
+   child_watch_source->poll.fd = (gintptr) pid;
+   child_watch_source->poll.events = G_IO_IN;
+ 
+@@ -6763,7 +6810,7 @@ glib_worker_main (gpointer data)
+     {
+       g_main_context_iteration (glib_worker_context, TRUE);
+ 
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+       if (g_atomic_int_get (&any_unix_signal_pending))
+         dispatch_unix_signals ();
+ #endif
+@@ -6780,7 +6827,7 @@ g_get_worker_context (void)
+   if (g_once_init_enter (&initialised))
+     {
+       /* mask all signals in the worker thread */
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+       sigset_t prev_mask;
+       sigset_t all;
+ 
+@@ -6789,7 +6836,7 @@ g_get_worker_context (void)
+ #endif
+       glib_worker_context = g_main_context_new ();
+       g_thread_new ("gmain", glib_worker_main, NULL);
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+       pthread_sigmask (SIG_SETMASK, &prev_mask, NULL);
+ #endif
+       g_once_init_leave (&initialised, TRUE);
+diff --git a/glib/grand.c b/glib/grand.c
+index 61b835b..502cb43 100644
+--- a/glib/grand.c
++++ b/glib/grand.c
+@@ -46,6 +46,10 @@
+ #include <sys/types.h>
+ #include "grand.h"
+ 
++#ifdef __wasi__
++#include <wasi/api.h>
++#endif
++
+ #include "genviron.h"
+ #include "gmain.h"
+ #include "gmem.h"
+@@ -171,7 +175,17 @@ GRand*
+ g_rand_new (void)
+ {
+   guint32 seed[4];
+-#ifdef G_OS_UNIX
++#ifdef __wasi__
++  if (__wasi_random_get ((uint8_t *) seed, sizeof (seed))
++      != __WASI_ERRNO_SUCCESS)
++    {
++      gint64 now_us = g_get_real_time ();
++      seed[0] = (guint32) (now_us / G_USEC_PER_SEC);
++      seed[1] = now_us % G_USEC_PER_SEC;
++      seed[2] = getpid ();
++      seed[3] = 0;
++    }
++#elif defined(G_OS_UNIX)
+   static gboolean dev_urandom_exists = TRUE;
+ 
+   if (dev_urandom_exists)
+diff --git a/glib/gtestutils.c b/glib/gtestutils.c
+index 99d6e4c..69c9d12 100644
+--- a/glib/gtestutils.c
++++ b/glib/gtestutils.c
+@@ -24,12 +24,15 @@
+ #include "gfileutils.h"
+ 
+ #include <sys/types.h>
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+ #include <sys/wait.h>
+ #include <sys/time.h>
+ #include <fcntl.h>
+ #include <unistd.h>
+ #endif
++#ifdef __wasi__
++#include <unistd.h>
++#endif
+ #ifdef HAVE_FTW_H
+ #include <ftw.h>
+ #endif
+@@ -40,7 +43,7 @@
+ #ifdef HAVE_SYS_PRCTL_H
+ #include <sys/prctl.h>
+ #endif
+-#ifdef HAVE_SYS_RESOURCE_H
++#if defined(HAVE_SYS_RESOURCE_H) && !defined(__wasi__)
+ #include <sys/resource.h>
+ #endif
+ #ifdef G_OS_WIN32
+@@ -1164,7 +1167,7 @@ g_test_log (GTestLogType lbit,
+ void
+ g_test_disable_crash_reporting (void)
+ {
+-#ifdef HAVE_SYS_RESOURCE_H
++#if defined(HAVE_SYS_RESOURCE_H) && !defined(__wasi__)
+   struct rlimit limit = { 0, 0 };
+ 
+   (void) setrlimit (RLIMIT_CORE, &limit);
+@@ -3679,7 +3682,7 @@ test_trap_clear (void)
+   g_clear_pointer (&test_trap_last_stderr, g_free);
+ }
+ 
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+ 
+ static int
+ safe_dup2 (int fd1,
+@@ -3733,7 +3736,9 @@ child_timeout (gpointer user_data)
+ {
+   WaitForChildData *data = user_data;
+ 
+-#ifdef G_OS_WIN32
++#ifdef __wasi__
++  (void) data;
++#elif defined(G_OS_WIN32)
+   TerminateProcess (data->pid, G_TEST_STATUS_TIMED_OUT);
+ #else
+   kill (data->pid, SIGALRM);
+@@ -3930,7 +3935,7 @@ gboolean
+ g_test_trap_fork (guint64        usec_timeout,
+                   GTestTrapFlags test_trap_flags)
+ {
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+   int stdout_pipe[2] = { -1, -1 };
+   int stderr_pipe[2] = { -1, -1 };
+   int errsv;
+@@ -4225,7 +4230,7 @@ g_test_subprocess (void)
+ gboolean
+ g_test_trap_has_passed (void)
+ {
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+   return (WIFEXITED (test_trap_last_status) &&
+       WEXITSTATUS (test_trap_last_status) == 0);
+ #else
+@@ -4245,7 +4250,7 @@ g_test_trap_has_passed (void)
+ gboolean
+ g_test_trap_reached_timeout (void)
+ {
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+   return (WIFSIGNALED (test_trap_last_status) &&
+       WTERMSIG (test_trap_last_status) == SIGALRM);
+ #else
+@@ -4258,7 +4263,7 @@ log_child_output (const gchar *process_id)
+ {
+   gchar *escaped;
+ 
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+   if (WIFEXITED (test_trap_last_status)) /* normal exit */
+     {
+       if (WEXITSTATUS (test_trap_last_status) == 0)
+@@ -4331,7 +4336,7 @@ g_test_trap_assertions (const char     *domain,
+   const char *match_error = match_result ? "failed to match" : "contains invalid match";
+   char *process_id;
+ 
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+   if (test_trap_last_subprocess != NULL)
+     {
+       process_id = g_strdup_printf ("%s [%d]", test_trap_last_subprocess,
+diff --git a/glib/gthread-posix.c b/glib/gthread-posix.c
+index 9c90202..511b3b1 100644
+--- a/glib/gthread-posix.c
++++ b/glib/gthread-posix.c
+@@ -720,6 +720,11 @@ g_system_thread_new (GThreadFunc proxy,
+                      gpointer data,
+                      GError **error)
+ {
++#ifdef __wasi__
++  g_set_error_literal (error, G_THREAD_ERROR, G_THREAD_ERROR_AGAIN,
++                       "Threads are unavailable on WASI");
++  return NULL;
++#else
+   GThreadPosix *thread;
+   GRealThread *base_thread;
+   pthread_attr_t attr;
+@@ -776,6 +781,7 @@ g_system_thread_new (GThreadFunc proxy,
+   g_mutex_init (&thread->lock);
+ 
+   return (GRealThread *) thread;
++#endif
+ }
+ 
+ G_ALWAYS_INLINE static inline void
+@@ -803,7 +809,11 @@ g_system_thread_wait (GRealThread *thread)
+ void
+ g_system_thread_exit (void)
+ {
++#ifdef __wasi__
++  abort ();
++#else
+   pthread_exit (NULL);
++#endif
+ }
+ 
+ void
+@@ -831,7 +841,7 @@ void
+ g_system_thread_get_name (char  *buffer,
+                           gsize  length)
+ {
+-#ifdef HAVE_PTHREAD_GETNAME_NP
++#if defined(HAVE_PTHREAD_GETNAME_NP) && !defined(__wasi__)
+   pthread_getname_np (pthread_self (), buffer, length);
+ #else
+   g_assert (length >= 1);
+diff --git a/glib/gthread.c b/glib/gthread.c
+index 8354c01..104f305 100644
+--- a/glib/gthread.c
++++ b/glib/gthread.c
+@@ -1168,7 +1168,7 @@ g_get_num_processors (void)
+ 
+   if (count > 0)
+     return count;
+-#elif defined(_SC_NPROCESSORS_ONLN) && defined(THREADS_POSIX) && defined(HAVE_PTHREAD_GETAFFINITY_NP)
++#elif !defined(__wasi__) && defined(_SC_NPROCESSORS_ONLN) && defined(THREADS_POSIX) && defined(HAVE_PTHREAD_GETAFFINITY_NP)
+   {
+     int ncores = MIN (sysconf (_SC_NPROCESSORS_ONLN), CPU_SETSIZE);
+     cpu_set_t cpu_mask;
+diff --git a/glib/gutils.c b/glib/gutils.c
+index 02da41b..b32b344 100644
+--- a/glib/gutils.c
++++ b/glib/gutils.c
+@@ -42,10 +42,12 @@
+ #include <errno.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+ #include <pwd.h>
+ #include <sys/utsname.h>
+ #include <unistd.h>
++#elif defined(__wasi__)
++#include <unistd.h>
+ #endif
+ #include <sys/types.h>
+ #ifdef HAVE_SYS_PARAM_H
+@@ -659,7 +661,7 @@ g_get_user_database_entry (void)
+     {
+       static UserDatabaseEntry e;
+ 
+-#ifdef G_OS_UNIX
++#if defined(G_OS_UNIX) && !defined(__wasi__)
+       {
+         struct passwd *pw = NULL;
+         gpointer buffer = NULL;
+@@ -1534,7 +1536,7 @@ get_windows_version (gboolean with_windows)
+ }
+ #endif
+ 
+-#if defined (G_OS_UNIX) && !defined (__APPLE__)
++#if defined (G_OS_UNIX) && !defined (__APPLE__) && !defined (__wasi__)
+ static gchar *
+ get_os_info_from_os_release (const gchar *key_name,
+                              const gchar *buffer)
+@@ -1691,6 +1693,14 @@ g_get_os_info (const gchar *key_name)
+     return g_strdup ("macOS");
+   else
+     return NULL;
++#elif defined (__wasi__)
++  if (g_strcmp0 (key_name, G_OS_INFO_KEY_NAME) == 0 ||
++      g_strcmp0 (key_name, G_OS_INFO_KEY_PRETTY_NAME) == 0)
++    return g_strdup ("WASI");
++  else if (g_strcmp0 (key_name, G_OS_INFO_KEY_ID) == 0)
++    return g_strdup ("wasi");
++  else
++    return NULL;
+ #elif defined (G_OS_UNIX)
+   const gchar * const os_release_files[] = { "/etc/os-release", "/usr/lib/os-release" };
+   gsize i;
+@@ -3196,7 +3206,7 @@ g_check_setuid (void)
+    * https://code.google.com/p/android-developer-preview/issues/detail?id=168
+    */
+   return issetugid ();
+-#elif defined(G_OS_UNIX)
++#elif defined(G_OS_UNIX) && !defined(__wasi__)
+   uid_t ruid, euid, suid; /* Real, effective and saved user ID's */
+   gid_t rgid, egid, sgid; /* Real, effective and saved group ID's */
+ 
+diff --git a/glib/gwakeup.c b/glib/gwakeup.c
+index 8208042..f97ff6f 100644
+--- a/glib/gwakeup.c
++++ b/glib/gwakeup.c
+@@ -31,6 +31,9 @@
+ #ifdef GLIB_COMPILATION
+ #include "gtypes.h"
+ #include "gpoll.h"
++#ifdef __wasi__
++#include "gslice.h"
++#endif
+ #else
+ #include <glib.h>
+ #endif
+@@ -58,7 +61,44 @@
+  *
+  * Since: 2.30
+  */
+-#ifdef _WIN32
++#ifdef __wasi__
++
++struct _GWakeup
++{
++  guint unused;
++};
++
++GWakeup *
++g_wakeup_new (void)
++{
++  return g_slice_new0 (GWakeup);
++}
++
++void
++g_wakeup_get_pollfd (GWakeup *wakeup,
++                     GPollFD *poll_fd)
++{
++  poll_fd->fd = -1;
++  poll_fd->events = 0;
++}
++
++void
++g_wakeup_acknowledge (GWakeup *wakeup)
++{
++}
++
++void
++g_wakeup_signal (GWakeup *wakeup)
++{
++}
++
++void
++g_wakeup_free (GWakeup *wakeup)
++{
++  g_slice_free (GWakeup, wakeup);
++}
++
++#elif defined (_WIN32)
+ 
+ #include <windows.h>
+ 
+diff --git a/glib/meson.build b/glib/meson.build
+index fac149c..7f13147 100644
+--- a/glib/meson.build
++++ b/glib/meson.build
+@@ -369,7 +369,12 @@ if host_system == 'windows'
+     glib_sources += files('dirent/wdirent.c')
+   endif
+ else
+-  glib_sources += files('glib-unix.c', 'gspawn-posix.c', 'giounix.c')
++  glib_sources += files('glib-unix.c', 'giounix.c')
++  if host_system != 'wasi'
++    # WASI cannot spawn processes; g_spawn_* stays unresolved in the
++    # static archive and must not be referenced by the final module.
++    glib_sources += files('gspawn-posix.c')
++  endif
+   platform_deps = []
+ endif
+ 
+diff --git a/gobject/meson.build b/gobject/meson.build
+index 3a7f7a6..de6acda 100644
+--- a/gobject/meson.build
++++ b/gobject/meson.build
+@@ -168,11 +168,13 @@ libgobject_dep = declare_dependency(link_with : libgobject,
+ )
+ meson.override_dependency('gobject-2.0', libgobject_dep)
+ 
+-gobject_query = executable('gobject-query', 'gobject-query.c',
+-  install : true,
+-  install_dir : get_option('devbindir'),
+-  install_tag : 'bin-devel',
+-  dependencies : [libglib_dep, libgobject_dep])
++if host_system != 'wasi'
++  gobject_query = executable('gobject-query', 'gobject-query.c',
++    install : true,
++    install_dir : get_option('devbindir'),
++    install_tag : 'bin-devel',
++    dependencies : [libglib_dep, libgobject_dep])
++endif
+ 
+ install_data('gobject_gdb.py',
+   install_dir : glib_pkgdatadir / 'gdb',
+diff --git a/meson.build b/meson.build
+index e61538d..d618d8c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -293,7 +293,9 @@ glib_conf.set_quoted('PACKAGE_STRING', 'glib @0@'.format(meson.project_version()
+ glib_conf.set_quoted('PACKAGE_TARNAME', 'glib')
+ glib_conf.set_quoted('PACKAGE_URL', '')
+ glib_conf.set_quoted('PACKAGE_VERSION', meson.project_version())
+-glib_conf.set('ENABLE_NLS', 1)
++if host_system != 'wasi'
++  glib_conf.set('ENABLE_NLS', 1)
++endif
+ 
+ # used by the .rc.in files
+ glibconfig_conf.set('LT_CURRENT_MINUS_AGE', soversion)
+@@ -2131,7 +2133,11 @@ if host_system == 'windows' and not get_option('force_posix_threads')
+   glibconfig_conf.set('g_threads_impl_def', 'WIN32')
+   glib_conf.set('THREADS_WIN32', 1)
+ else
+-  thread_dep = dependency('threads')
++  if host_system == 'wasi'
++    thread_dep = []
++  else
++    thread_dep = dependency('threads')
++  endif
+   threads_implementation = 'posix'
+   pthread_prefix = '''
+       #ifndef _GNU_SOURCE
+@@ -2343,12 +2349,14 @@ endif
+ 
+ if libintl.found() and libintl.type_name() != 'internal'
+   have_bind_textdomain_codeset = cc.has_function('bind_textdomain_codeset', dependencies: libintl_deps, prefix: libintl_prefix)
+-else
++elif host_system != 'wasi'
+   # using proxy-libintl fallback
+   libintl = dependency('intl', allow_fallback: true)
+   assert(libintl.type_name() == 'internal')
+   libintl_deps = [libintl]
+   have_bind_textdomain_codeset = true  # proxy-libintl supports it
++else
++  have_bind_textdomain_codeset = false
+ endif
+ 
+ glib_conf.set('HAVE_BIND_TEXTDOMAIN_CODESET', have_bind_textdomain_codeset)
