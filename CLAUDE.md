@@ -2,8 +2,15 @@
 
 An attempt to build GNU LilyPond to WebAssembly (WASI), **tailing upstream
 master** rather than forking it. If it succeeds, this becomes the embedded
-engraving backend for `../lilypond-mcp` (SVG only — EPS stays native), making
-the server runnable with zero system dependencies.
+engraving backend for `../lilypond-mcp`, making the server runnable with
+zero system dependencies.
+
+Target formats: **SVG and EPS**. EPS is LilyPond-native (the ps backend
+writes it directly, fonts embedded — no Ghostscript involved), so it works
+on WASI provided font files are visible to the module's filesystem. PDF and
+PNG are produced by *spawning Ghostscript* and stay native-only — WASI has
+no subprocesses. (hlolli's wasi-svg-only-runtime patch cuts the whole PS
+path; we adapt it to keep the PS backend and disable only the gs calls.)
 
 ## Architecture: tail, don't fork
 
@@ -37,10 +44,11 @@ where possible a wasmtime run) before starting the next.
    Guile is the expected boss fight (JIT, continuations, and BDW-GC all
    assume things WASI doesn't provide).
 3. **LilyPond engine** — cross-configure the patched source against the
-   stage-2 stack, SVG backend only, no GS/PDF paths.
+   stage-2 stack: SVG + PS/EPS backends, Ghostscript-conversion paths
+   (PDF/PNG) disabled.
 4. **WASI command module** — a `lilypond.wasm` that under
-   `wasmtime --dir . lilypond.wasm test.ly` emits an SVG. This is the
-   success criterion.
+   `wasmtime --dir . lilypond.wasm test.ly` emits an SVG **and a cropped
+   EPS with embedded fonts**. This is the success criterion.
 5. **Integration** — optional backend for `../lilypond-mcp`.
 
 ## Hard-won facts
