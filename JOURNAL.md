@@ -2,6 +2,22 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — field test in InDesign: EPS out, PDF in
+
+Placing the wasm-engraved EPS in InDesign: **glyphs vanish** — InDesign
+ignores LilyPond's %%BeginFont/Resource-FontSet embedding (native EPS uses
+the identical format, so this was a latent booklet-pipeline bug too, found
+only by actually placing a file). Ghostscript pdfwrite re-embedding places
+perfectly once CropBox/BleedBox/TrimBox/ArtBox are all defined (InDesign
+crops to whichever box the Place dialog last used; undefined boxes throw
+"Cannot crop to bleed box").
+
+Consequences: lilypond-mcp now stamps boxes on every cropped PDF and
+recommends PDF for layout placement; analog places build/pdf/. The wasm
+engine keeps emitting EPS (it cannot run gs) — its consumers convert
+host-side when Adobe apps are the destination. EPS remains correct for
+Ghostscript-based flows.
+
 ## 2026-08-22 — STAGE 4: SUCCESS CRITERION MET. SVG + EPS engraved on wasm.
 
 `wasmtime -W exceptions=y` with the mounts/env from nix/assets +
