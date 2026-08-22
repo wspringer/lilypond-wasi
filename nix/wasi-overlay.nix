@@ -373,6 +373,31 @@ else
     readline = prev.readline.overrideAttrs (old: { meta = allPlatforms old; });
     ncurses = prev.ncurses.overrideAttrs (old: { meta = allPlatforms old; });
 
+    # libpng's error handling is setjmp-based to the bone — the shared
+    # sjlj/EH treatment is the only way through. LilyPond's configure
+    # requires it even for SVG/EPS output.
+    libpng = prev.libpng.overrideAttrs (old: {
+      env = (old.env or { }) // {
+        NIX_CFLAGS_COMPILE = sjljFlags;
+        # sjlj lowering emits calls into wasi-libc's libsetjmp
+        NIX_LDFLAGS = "-lsetjmp";
+      };
+      # library-only: the contrib test binaries want tmpfile() etc.
+      buildPhase = ''
+        runHook preBuild
+        make libpng16.la
+        runHook postBuild
+      '';
+      installPhase = ''
+        runHook preInstall
+        make install-libLTLIBRARIES install-data-am
+        for o in $outputs; do mkdir -p ''${!o}; done
+        runHook postInstall
+      '';
+      doCheck = false;
+      meta = allPlatforms old;
+    });
+
     # GMP without assembly, and scratch space on the heap instead of
     # alloca — nested arithmetic can exhaust wasm's fixed stack.
     gmp = prev.gmp.overrideAttrs (old: {
@@ -453,9 +478,17 @@ else
       # var, not a configureFlags element: those must not contain spaces.)
       CPPFLAGS = "-D_WASI_EMULATED_SIGNAL -DPOLLPRI=0";
       # The target cannot run Guile's installed helper programs; keep the
-      # static library, headers, and Scheme files for later links.
+      # static library, headers, and Scheme files for later links. The .pc
+      # file needs surgery: static consumers must see the private deps, and
+      # includedir must point at the dev output where libguile.h lives.
       postInstall = ''
         test -f "$out/lib/libguile-3.0.a"
+        sed -i "$out/lib/pkgconfig/guile"-*.pc \
+          -e "s|-lffi|-L${final.libffi}/lib -lffi|g" \
+          -e "s|-lgmp|-L${final.gmp}/lib -lgmp|g" \
+          -e "s|-lunistring|-L${final.libunistring}/lib -lunistring|g" \
+          -e "s|^Cflags:\(.*\)$|Cflags: -D_WASI_EMULATED_SIGNAL -I${final.gmp.dev}/include -I${final.libunistring.dev}/include \1|g" \
+          -e "s|includedir=$out|includedir=$dev|g"
         rm -rf "$out/bin"
         find "$out/lib" -type f \( -name '*.so' -o -name '*.so.*' -o -name '*.dylib' \) -delete
         for o in $outputs; do mkdir -p ''${!o}; done

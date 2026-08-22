@@ -2,6 +2,33 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-22 — STAGE 3 COMPLETE: lilypond.wasm links AND RUNS
+
+`nix build .#lilypond` → 62 MB `lilypond.wasm`, and
+`wasmtime -W exceptions=y lilypond.wasm --version` prints
+"GNU LilyPond 2.27.3 (running Guile 3.0)" — upstream master of 2026-08-21,
+Guile bootstrapping inside wasm. Four rounds:
+
+1. libpng: sjlj flags + `-lsetjmp` (sjlj lowering calls `__wasm_setjmp`
+   from wasi-libc's libsetjmp);
+2. libpng again: contrib test binaries want tmpfile() → library-only build;
+3. lily compile: `libguile.h` not found — guile's .pc needed hlolli's
+   surgery (includedir=$dev, -L paths for static private deps ffi/gmp/
+   unistring, Cflags with emulated-signal + dep includes);
+4. Linked. hlolli's two LilyPond patches applied **clean to 2.27.3**;
+   his "svg-only" runtime patch turned out EPS-compatible all along (it
+   only stubs subprocess spawning — EPS never spawns; installed as
+   patches/0002-wasi-runtime-no-subprocess.patch).
+
+The final link needs `wasm-opt --fpcast-emu --spill-pointers` (GObject
+callback casts; boehm-gc needs pointer locals in linear memory) and an
+EH-enabled engine (`wasmtime -W exceptions=y`).
+
+Stage 4 remaining: runtime data — the Scheme library (scm/, ly/),
+Emmentaler + text fonts from a native LilyPond build, fonts.conf — mounted
+via `wasmtime --dir`, then engrave test.ly → SVG + cropped EPS. hlolli's
+nix/lilypond/{assets,bytecode} dirs are the reference.
+
 ## 2026-08-22 — checkpoint 9 DONE: wasi-guile. STAGE 2 COMPLETE.
 
 `libguile-3.0.a`, members verified `\0asm`. `nix build .#wasi-deps` links

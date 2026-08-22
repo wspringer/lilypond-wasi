@@ -63,6 +63,10 @@
           wasi-pango = wasi.pango;
           wasi-guile = wasi.guile;
 
+          # Stage 3 — the engine itself: a statically linked lilypond.wasm
+          # (SVG + EPS backends; PDF/PNG need Ghostscript and stay native).
+          lilypond = wasi.callPackage ./nix/lilypond.nix { src = source; };
+
           wasi-deps = pkgs.linkFarm "lilypond-wasi-deps" [
             { name = "zlib"; path = wasi-zlib; }
             { name = "expat"; path = wasi-expat; }
