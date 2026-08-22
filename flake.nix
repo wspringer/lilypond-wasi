@@ -127,6 +127,36 @@
                 })
               else
                 prev.freetype;
+
+            # libffi's wasm backend targets Emscripten; hlolli's patch
+            # (GPL-3.0-or-later, from hlolli/lilypond-wasm) makes it speak
+            # WASI: typed scalar calls for 0–4 args, other CIFs rejected.
+            libffi =
+              if prev.stdenv.hostPlatform.isWasi then
+                prev.libffi.overrideAttrs (old: {
+                  patches = (old.patches or [ ]) ++ [ ./patches/deps/libffi-wasi.patch ];
+                  configureFlags = (old.configureFlags or [ ]) ++ [
+                    "--disable-multi-os-directory"
+                  ];
+                  doCheck = false;
+                })
+              else
+                prev.libffi;
+
+            # boehm-gc knows no WASI; hlolli's patch teaches gcconfig.h the
+            # platform (single-threaded, no signals, no incremental).
+            boehmgc =
+              if prev.stdenv.hostPlatform.isWasi then
+                prev.boehmgc.overrideAttrs (old: {
+                  patches = (old.patches or [ ]) ++ [ ./patches/deps/boehm-gc-wasi.patch ];
+                  configureFlags = (old.configureFlags or [ ]) ++ [
+                    "--disable-cplusplus"
+                    "--disable-threads"
+                  ];
+                  doCheck = false;
+                })
+              else
+                prev.boehmgc;
           });
           shortRev = builtins.substring 0 7 (lilypond-src.rev or "dirty");
         in
