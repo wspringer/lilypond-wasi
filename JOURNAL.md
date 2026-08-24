@@ -2,6 +2,31 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-24 — stable/2.26 tracked alongside master; versions derived
+
+LilyPond keeps stable and development in parallel: master is 2.27.x (odd
+minor = dev, becomes 2.28), `stable/2.26` is the maintained stable line
+and is active (commit 2026-08-23). nixpkgs ships 2.26.0, so analog's
+native pipeline engraves with *stable* while the wasm engine was tracking
+*dev* — a mismatch that would have mattered the moment wasm became the MCP
+backend.
+
+Both patches apply **clean to stable/2.26** (no fuzz), so one series covers
+both generations. The WASI dependency stack is version-independent, so the
+second variant costs only its own engine + assets:
+
+    .#lilypond          2.27.3+g6069e16   (master)
+    .#lilypond-stable   2.26.1+g8d6b320   (stable/2.26)
+
+Both build (12.9 MB each) and both engrave under wasmtime — verified with
+SVG output from each.
+
+Versioning was a live bug: `version = "2.27.3-dev"` hardcoded in two
+derivations, guaranteed to lie after the next pin bump. Now parsed from
+upstream's VERSION file + pinned rev, with a flake assert that engine and
+assets agree (they share a Scheme library; mixing generations fails
+confusingly at run time).
+
 ## 2026-08-22 — module size: 59 MB -> 12.9 MB (3.6 MB gzipped)
 
 `wasm-opt --strip-debug -Os` on top of the correctness passes; ~78% of
