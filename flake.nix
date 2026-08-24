@@ -1,5 +1,5 @@
 {
-  description = "lilypond-wasm — WASI/WebAssembly build of GNU LilyPond, tailing upstream master";
+  description = "lilypond-wasi — WASI/WebAssembly build of GNU LilyPond, tailing upstream master";
 
   inputs = {
     # Pinned to the same rev as hlolli/lilypond-wasm (see JOURNAL.md

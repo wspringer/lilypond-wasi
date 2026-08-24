@@ -1,11 +1,11 @@
-# lilypond-wasm
+# lilypond-wasi
 
 An attempt to build [GNU LilyPond](https://lilypond.org) to WebAssembly
 (WASI), pinned against upstream master and carrying a small patch series —
 tailing upstream rather than forking it.
 
 If it succeeds, it becomes the embedded, zero-system-dependency engraving
-backend (SVG only) for [lilypond-mcp](../lilypond-mcp).
+backend (SVG + EPS) for [lilypond-mcp](../lilypond-mcp).
 
 ```sh
 nix flake update lilypond-src   # advance the upstream pin

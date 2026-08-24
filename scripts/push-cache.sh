@@ -14,7 +14,7 @@
 # Needs:  nix run nixpkgs#cachix -- authtoken <token>   (once)
 set -euo pipefail
 
-CACHE="${1:-${CACHIX_CACHE:-lilypond-wasm}}"
+CACHE="${1:-${CACHIX_CACHE:-lilypond-wasi}}"
 cd "$(dirname "$0")/.."
 
 echo "==> building targets"

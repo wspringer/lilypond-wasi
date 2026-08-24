@@ -1,4 +1,4 @@
-# lilypond-wasm
+# lilypond-wasi
 
 An attempt to build GNU LilyPond to WebAssembly (WASI), **tailing upstream
 master** rather than forking it. If it succeeds, this becomes the embedded
