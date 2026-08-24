@@ -95,6 +95,7 @@ jobs:
           nix build ".#${{ steps.tag.outputs.attr }}" -o result-engine
           nix build ".#$([ '${{ steps.tag.outputs.variant }}' = dev ] && echo assets || echo assets-stable)" -o result-assets
           nix build ".#$([ '${{ steps.tag.outputs.variant }}' = dev ] && echo bytecode || echo bytecode-stable)" -o result-bytecode
+          nix build ".#wasi-guile.out" -o result-guile
 
       - name: Verify the module engraves before publishing it
         run: |
@@ -129,6 +130,10 @@ jobs:
           cp result-engine/bin/lilypond.wasm "dist/lilypond-wasi-$slug.wasm"
           tar -C result-assets/share -czf "dist/lilypond-wasi-assets-$slug.tar.gz" lilypond
           tar -C result-bytecode -czf "dist/lilypond-wasi-bytecode-$slug.tar.gz" ccache
+          # Guile's compiled stdlib. With the bytecode caches complete the
+          # engine never reads Guile's .scm sources (verified 2026-08-24),
+          # so ccache alone makes releases self-sufficient for no-Nix hosts.
+          tar -C result-guile/lib/guile/3.0 -czf "dist/lilypond-wasi-guile-$slug.tar.gz" ccache
           cat > dist/provenance.json <<EOF
           {
             "variant": "${{ steps.tag.outputs.variant }}",
@@ -139,6 +144,50 @@ jobs:
             "repository": "${{ github.server_url }}/${{ github.repository }}"
           }
           EOF
+
+
+      - name: Runtime manifest
+        run: |
+          cat > dist/runtime-manifest.json <<EOF
+          {
+            "schemaVersion": 1,
+            "lilypond": "${{ steps.tag.outputs.upstream }}",
+            "variant": "${{ steps.tag.outputs.variant }}",
+            "recipe": "${{ steps.tag.outputs.recipe }}",
+            "wasi": "preview1",
+            "wasmExceptions": "exnref",
+            "engine": "lilypond-wasi-${{ steps.tag.outputs.slug }}.wasm",
+            "argv0": "/lilypond",
+            "writableDirectory": "/work",
+            "mounts": {
+              "/lilypond": { "asset": "lilypond-wasi-assets-${{ steps.tag.outputs.slug }}.tar.gz", "path": "lilypond" },
+              "/lily-ccache": { "asset": "lilypond-wasi-bytecode-${{ steps.tag.outputs.slug }}.tar.gz", "path": "ccache" },
+              "/guile-ccache": { "asset": "lilypond-wasi-guile-${{ steps.tag.outputs.slug }}.tar.gz", "path": "ccache" }
+            },
+            "environment": {
+              "FONTCONFIG_FILE": "/lilypond/fonts/fonts.conf",
+              "FONTCONFIG_PATH": "/lilypond/fonts",
+              "GUILE_AUTO_COMPILE": "0",
+              "GUILE_LOAD_PATH": "/guile",
+              "GUILE_LOAD_COMPILED_PATH": "/guile-ccache:/lily-ccache",
+              "GUILE_SYSTEM_PATH": "/guile",
+              "GUILE_SYSTEM_COMPILED_PATH": "/guile-ccache",
+              "HOME": "/work/home",
+              "LILYPOND_DATADIR": "/lilypond",
+              "LILYPOND_LIBDIR": "/work/lily-lib",
+              "TMPDIR": "/work/tmp",
+              "XDG_CACHE_HOME": "/work/cache"
+            },
+            "formats": ["svg", "eps"],
+            "knownIssues": {
+              "epsExitNonzero": "with -dcrop, the run exits nonzero AFTER writing complete EPS output (stubbed Ghostscript conversion); check for the artifact, not the exit code"
+            }
+          }
+          EOF
+          python3 -c "import json; json.load(open('dist/runtime-manifest.json')); print('manifest valid')"
+
+      - name: Checksums (last, so every asset is covered)
+        run: |
           ( cd dist && shasum -a 256 * > SHA256SUMS )
           cat dist/SHA256SUMS
 
