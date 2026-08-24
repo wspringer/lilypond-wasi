@@ -176,6 +176,19 @@ repo.
 
 ## Conventions
 
+- **Conventional commits, always.** Knope derives the recipe version and
+  changelog from commit subjects, so here they carry release semantics:
+  - `fix:` — a correction to the recipe (patches, overlay, build flags).
+    Bumps patch, re-releases **both** variants.
+  - `feat:` — new recipe capability (a new format, a new package in the
+    stack). Bumps minor, re-releases both variants.
+  - `fix!:` / `feat!:` or `BREAKING CHANGE:` — consumers must adapt
+    (artifact naming, runtime contract, mount layout). Bumps major.
+  - `chore:`, `docs:`, `ci:` — no recipe bump, **no release**. Use these
+    for everything that doesn't change what gets built: journal entries,
+    workflow tuning, documentation.
+  - Upstream pin bumps arrive via the automated PRs and are releases of
+    the *upstream* axis, not the recipe — never write a `fix:` for one.
 - Record every session's findings (upstream rev, what built, what broke,
   why) in `JOURNAL.md` — negative results included; they are the map.
 - Builds happen through the flake only. No ad-hoc `./configure` runs outside
