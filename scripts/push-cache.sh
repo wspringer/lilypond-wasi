@@ -6,9 +6,10 @@
 # dependency libraries, the assets, and lilypond.wasm itself. Stock nixpkgs
 # paths are skipped: cache.nixos.org already has them.
 #
-# Nothing here is reproducible from a public cache — pkgsCross.wasi32
-# derivations are never built by Hydra, on any nixpkgs pin. Losing them
-# means rebuilding the cross-LLVM toolchain from source (hours).
+# The stock cross toolchain (wasilibc, clang-wrapper, compiler-rt, libcxx)
+# IS on cache.nixos.org — Hydra builds it. What is not cached anywhere is
+# everything the overlay patches or reflags, plus the engine and assets:
+# 68 of the 77 wasi paths. Cachix skips the rest automatically.
 #
 # Usage:  ./scripts/push-cache.sh [cache-name]
 # Needs:  nix run nixpkgs#cachix -- authtoken <token>   (once)

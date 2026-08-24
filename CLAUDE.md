@@ -67,28 +67,26 @@ where possible a wasmtime run) before starting the next.
 
 ## Binary cache
 
-Everything under `wasm32-unknown-wasi` in the store is **unobtainable from
-any public cache** — Hydra never builds `pkgsCross.wasi32`, on any nixpkgs
-pin. Losing those paths means rebuilding the cross-LLVM toolchain from
-source (hours). 2.14 GB across 108 paths; the rest of the 63 GB build
-closure is stock nixpkgs that cache.nixos.org serves.
+Of the wasm32-unknown-wasi build closure (77 output paths):
+
+- **9 come from cache.nixos.org** — the stock cross toolchain (wasilibc,
+  clang-wrapper, compiler-rt, libcxx, the binutils/pkg-config wrappers).
+  Hydra *does* build these. Correction to an earlier claim in this file:
+  they were never at risk.
+- **68 exist only in our cache** — everything the overlay patches or
+  reflags, plus the engine and assets. Those are the ones worth pushing.
 
     ./scripts/push-cache.sh [cache-name]     # after: cachix authtoken <t>
 
-Until that cache exists, the only thing standing between you and a
-multi-hour toolchain rebuild is local GC roots. The `result-*` symlinks
-cover the runtime closures, but the **cross toolchain is a build-time
-dependency and is not covered by them** — it needs explicit roots:
+Cachix skips anything already on cache.nixos.org, so the push naturally
+uploads only the 68.
 
-    DRV=$(nix path-info --derivation .#lilypond)
-    nix-store -qR --include-outputs "$DRV" | grep -v '\.drv$' |
-      grep -E 'wasm32-unknown-wasi|wasilibc' | while read -r p; do
-        nix-store --add-root "result-tc-$(basename $p | cut -d- -f1 | cut -c1-8)" \
-          --indirect --realise "$p" >/dev/null
-      done
+Consumers must pass `--accept-flake-config` (or add the substituter to
+their own nix.conf) for the flake's `nixConfig` to take effect; Nix
+ignores untrusted flake settings by default.
 
-Verify with `nix-store --gc --print-dead` — none of the wasi paths should
-appear. (Renaming or moving the checkout orphans every root; redo this.)
+    ./scripts/push-cache.sh [cache-name]     # after: cachix authtoken <t>
+
 
 Caches are **per-system**: pushing from this laptop banks aarch64-darwin
 artifacts only. `.github/workflows/tail-upstream.yml` runs Linux-only by
