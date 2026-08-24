@@ -75,10 +75,31 @@ drift from what was actually built. A flake-level assert requires
 `lilypond.version == assets.version`: the engine loads its Scheme library
 out of the asset tree, and mixing generations fails confusingly at run time.
 
-Our *packaging* version is a separate git tag (`v0.1.0`), bumped when the
-patches or build change rather than when upstream moves. Tagging triggers
-`.github/workflows/release.yml`, which publishes both variants' modules and
-asset tarballs with SHA256SUMS.
+## Releasing
+
+Two independent things trigger a release — **upstream moving** or **our own
+recipe changing** (patches, overlay, build flags) — so no single number can
+describe one. The tag carries both axes, and there is one release stream per
+variant:
+
+    stable/2.26.1-p0.1.0     LilyPond 2.26.1, stable line, recipe 0.1.0
+    dev/2.27.4-p0.1.0        LilyPond 2.27.4, development line, same recipe
+
+Consequences worth understanding:
+
+- **One variant per release.** If master moves and stable does not, only a
+  `dev/*` release is cut. A combined release would republish a byte-identical
+  stable artifact under a new name, implying a change that did not happen.
+- **`dev/*` publishes as a pre-release**, so GitHub's "Latest" is always the
+  stable line — matching what LilyPond means by its two series.
+- **The recipe version lives in `./recipe-version`** and is asserted against
+  the tag; so is the upstream version, against what the pin actually builds.
+  A tag cannot misdescribe its contents — the release fails first.
+- The workflow **engraves a score under wasmtime before publishing**. A
+  module that cannot engrave never becomes a release.
+
+Bump `recipe-version` when our patches, overlay or build flags change —
+never when upstream moves.
 
 ## Build stages
 
