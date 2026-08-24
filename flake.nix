@@ -87,11 +87,15 @@
               };
               lilypond = wasi.callPackage ./nix/lilypond.nix { src = source; inherit version; };
               assets = pkgs.callPackage ./nix/assets { src = source; inherit version; };
+              bytecode = pkgs.callPackage ./nix/bytecode {
+                inherit lilypond assets;
+                guile = wasi.guile.out;
+              };
             in
             # The engine loads the Scheme library out of the asset tree.
             # Mixing generations would fail in confusing ways at run time.
             assert lilypond.version == assets.version;
-            { inherit source lilypond assets version; };
+            { inherit source lilypond assets bytecode version; };
 
           dev = mkVariant lilypond-src;
           stable = mkVariant lilypond-stable-src;
@@ -101,12 +105,14 @@
           source = dev.source;
           lilypond = dev.lilypond;
           assets = dev.assets;
+          bytecode = dev.bytecode;
 
           # Stable series (stable/2.26) — matches what nixpkgs ships and
           # what analog's native pipeline engraves with.
           source-stable = stable.source;
           lilypond-stable = stable.lilypond;
           assets-stable = stable.assets;
+          bytecode-stable = stable.bytecode;
 
           # Stage 2 — the WASI dependency stack, shared by both variants.
           wasi-zlib = wasi.zlib;

@@ -67,6 +67,7 @@ jobs:
         run: |
           nix build .#lilypond -o result-lilypond
           nix build .#assets   -o result-assets
+          nix build .#bytecode -o result-bytecode
           guile=$(nix build '.#wasi-guile.out' --print-out-paths)
           mkdir -p work/home work/tmp work/cache/fontconfig work/lily-lib
           printf '\\version "2.27.3"\n{ c%s e%s g%s }\n' "'" "'" "'" > work/in.ly
@@ -78,7 +79,8 @@ jobs:
             --dir "$guile/lib/guile/3.0/ccache::/guile-ccache" \
             --env FONTCONFIG_FILE=/lilypond/fonts/fonts.conf \
             --env GUILE_LOAD_PATH=/guile \
-            --env GUILE_LOAD_COMPILED_PATH=/guile-ccache \
+            --dir "$PWD/result-bytecode/ccache::/lily-ccache" \
+            --env GUILE_LOAD_COMPILED_PATH=/guile-ccache:/lily-ccache \
             --env GUILE_SYSTEM_PATH=/guile \
             --env GUILE_SYSTEM_COMPILED_PATH=/guile-ccache \
             --env HOME=/work/home --env LILYPOND_DATADIR=/lilypond \

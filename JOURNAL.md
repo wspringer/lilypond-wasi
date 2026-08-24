@@ -2,6 +2,27 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-24 — bytecode precompilation: 4.7 s -> 0.9 s (issue #3)
+
+nix/bytecode runs each variant's engine once under wasmtime with a
+writable datadir and GUILE_AUTO_COMPILE=1, then harvests the 68 .go files
+Guile drops under <datadir>/guile-bytecode (a fixed guest path — no store
+paths leak into bytecode). mtimes are pinned to each module's source:
+Guile accepts bytecode only if not older, nix normalizes store mtimes, and
+equal counts as fresh (hlolli's trick). Floor of 66 modules + a required
+list guards against silently shipping a partial cache.
+
+Consumers mount $bytecode/ccache as /lily-ccache and append
+:/lily-ccache to GUILE_LOAD_COMPILED_PATH. Measured under node:wasi:
+**4.7 s -> 0.9 s wall**, SVG byte-identical, no compile warnings.
+
+Also proven today, en route: the engine runs under **Node's built-in
+WASI** — no wasmtime needed. Node 22 wants --experimental-wasm-exnref
+for our EH encoding; expected default in 24+.
+
+The compile driver engraves through BOTH backends; the EPS pass tolerates
+the known nonzero-exit wart and asserts on the artifact instead.
+
 ## 2026-08-24 — stable/2.26 tracked alongside master; versions derived
 
 LilyPond keeps stable and development in parallel: master is 2.27.x (odd
