@@ -1,6 +1,16 @@
 {
   description = "lilypond-wasi — WASI/WebAssembly build of GNU LilyPond, tailing upstream master";
 
+  # Nothing in the wasm32-unknown-wasi stack is obtainable from any public
+  # cache: Hydra never builds pkgsCross.wasi32, on any nixpkgs pin. Without
+  # this cache a consumer rebuilds the cross-LLVM toolchain from source.
+  nixConfig = {
+    extra-substituters = [ "https://lilypond-wasi.cachix.org" ];
+    extra-trusted-public-keys = [
+      "lilypond-wasi.cachix.org-1:glhfmPO7w9C/uWcv6fpS5LI878nEegtKU7Si0frHVBs="
+    ];
+  };
+
   inputs = {
     # Pinned to the same rev as hlolli/lilypond-wasm (see JOURNAL.md
     # 2026-08-21): its wasi32 stdenv predates the Rust component-model
