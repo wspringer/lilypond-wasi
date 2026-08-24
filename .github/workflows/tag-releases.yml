@@ -1,0 +1,61 @@
+# Derive per-variant release tags from what main actually contains.
+#
+# Runs when either version axis moves on main:
+#   - flake.lock        → upstream LilyPond changed (one or both variants)
+#   - recipe-version    → our patches/overlay/build changed (both variants)
+#
+# For each variant it computes `<variant>/<lilypond>-p<recipe>` and, if that
+# tag doesn't exist yet, creates it and dispatches release.yml for it. Tags
+# that already exist are skipped — so an upstream bump on master never
+# republishes an unchanged stable artifact.
+#
+# release.yml is dispatched explicitly because refs created with
+# GITHUB_TOKEN do not trigger `on: push: tags:` workflows (the same
+# loop-prevention that bit update-upstream.yml).
+name: tag releases
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - flake.lock
+      - recipe-version
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest # eval only, no builds — cheap
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Compute and cut missing tags
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          recipe="$(tr -d '[:space:]' < recipe-version)"
+
+          for variant in stable dev; do
+            attr=$([ "$variant" = dev ] && echo lilypond || echo lilypond-stable)
+            full="$(nix eval --raw ".#packages.x86_64-linux.$attr.version")"
+            upstream="${full%%+*}"
+            tag="$variant/$upstream-p$recipe"
+
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "= $tag already exists, skipping"
+              continue
+            fi
+
+            echo "+ cutting $tag"
+            git tag "$tag"
+            git push origin "refs/tags/$tag"
+            gh workflow run release.yml --ref "$tag" -f tag="$tag"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}

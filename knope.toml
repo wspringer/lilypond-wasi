@@ -1,0 +1,24 @@
+# Knope owns exactly one of this project's two version axes: the RECIPE —
+# our patches, overlay, and build flags — which is the thing conventional
+# commits describe. It bumps ./recipe-version and maintains the changelog.
+#
+# It deliberately does NOT own releases: those are per-variant tags
+# (dev/2.27.3-p0.1.0, stable/2.26.1-p0.1.0) combining the recipe version
+# with the LilyPond version from flake.lock, which knope cannot know.
+# tag-releases.yml derives them whenever main's flake.lock or
+# recipe-version changes.
+[package]
+versioned_files = [
+  { path = "recipe-version", regex = "(?<version>\\d+\\.\\d+\\.\\d+)" },
+]
+changelog = "CHANGELOG.md"
+
+# The Knope Bot GitHub App (https://github.com/marketplace/knope-bot)
+# keeps a release PR open with the next recipe version + changelog.
+# Merging it bumps recipe-version on main, which triggers the tagger.
+[bot.releases]
+enabled = true
+
+[github]
+owner = "wspringer"
+repo = "lilypond-wasi"

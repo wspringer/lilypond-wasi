@@ -20,6 +20,14 @@ on:
     tags:
       - "dev/*"
       - "stable/*"
+  # tag-releases.yml dispatches with the tag as input: refs it creates with
+  # GITHUB_TOKEN do not fire the push trigger above.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. stable/2.26.1-p0.1.0)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -29,6 +37,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: DeterminateSystems/nix-installer-action@main
 
@@ -41,7 +51,7 @@ jobs:
         id: tag
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"                  # e.g. dev/2.27.4-p0.1.0
+          tag="${{ inputs.tag || github.ref_name }}"   # e.g. dev/2.27.4-p0.1.0
           variant="${tag%%/*}"                      # dev | stable
           rest="${tag#*/}"                          # 2.27.4-p0.1.0
           claimed_upstream="${rest%-p*}"            # 2.27.4
@@ -122,7 +132,7 @@ jobs:
             "lilypond": "${{ steps.tag.outputs.upstream }}",
             "lilypondRevision": "${{ steps.tag.outputs.rev }}",
             "recipe": "${{ steps.tag.outputs.recipe }}",
-            "tag": "${GITHUB_REF_NAME}",
+            "tag": "${{ inputs.tag || github.ref_name }}",
             "repository": "${{ github.server_url }}/${{ github.repository }}"
           }
           EOF
@@ -172,7 +182,11 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
           files: dist/*
           body_path: notes.md
           prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
+          # keep "Latest" pointing at the stable line even when the knope
+          # bot's recipe releases or dev pre-releases land afterwards
+          make_latest: ${{ steps.tag.outputs.variant == 'stable' && 'true' || 'false' }}
           name: "LilyPond ${{ steps.tag.outputs.upstream }} (${{ steps.tag.outputs.variant }}) — recipe ${{ steps.tag.outputs.recipe }}"

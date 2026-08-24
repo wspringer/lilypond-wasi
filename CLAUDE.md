@@ -98,8 +98,19 @@ Consequences worth understanding:
 - The workflow **engraves a score under wasmtime before publishing**. A
   module that cannot engrave never becomes a release.
 
-Bump `recipe-version` when our patches, overlay or build flags change —
-never when upstream moves.
+The recipe version is managed by **Knope** (`knope.toml`): conventional
+commits describing our patches/overlay/build keep a bot-maintained release
+PR up to date; merging it bumps `recipe-version` and `CHANGELOG.md`. Knope
+never touches the per-variant release tags — it cannot know LilyPond
+versions.
+
+Releases are cut mechanically by `tag-releases.yml`: whenever `flake.lock`
+or `recipe-version` changes on main, it derives `<variant>/<lilypond>-p<recipe>`
+per variant and dispatches release.yml for any tag that does not exist yet.
+Merging an upstream PR or the knope release PR *is* the release decision —
+no manual tagging. (Conventional-commit discipline matters here: `chore:`
+and `docs:` do not bump the recipe, so they do not re-release anything.)
+
 
 ## Build stages
 
