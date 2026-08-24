@@ -26,11 +26,32 @@ path; we adapt it to keep the PS backend and disable only the gs calls.)
 
 ### Tailing workflow
 
-1. `nix flake update lilypond-src`
-2. `nix build .#source` — failure means the patch series no longer applies;
-   regenerate the failing patch (recipe in `patches/README.md`)
-3. Rebuild the furthest stage previously reached; fix or record what broke
-4. Note the upstream rev and outcome in `JOURNAL.md`
+Automated. `.github/workflows/update-upstream.yml` runs Mondays 06:00 UTC,
+one job per variant:
+
+1. `nix flake update <input>` — advance the pin to that branch's tip
+2. `nix build .#source…` — **does the patch series still apply?**
+3. `nix build .#<engine>` — does it still build?
+4. Open a PR with the before/after revisions and those results
+
+A PR appears only when the checks pass; if a patch stops applying, the
+workflow goes red instead and the failing hunk is in the log. Adoption
+stays deliberate — you merge. One PR per variant, so a break in the
+development series never blocks a stable-series update.
+
+Note: PRs opened with `GITHUB_TOKEN` do not trigger other workflows, which
+is why verification happens *inside* the update job rather than relying on
+`build.yml` to run on the PR. Set a `GH_PAT` secret to get CI on these PRs
+too.
+
+Doing it by hand is the same three commands:
+
+    nix flake update lilypond-src
+    nix build .#lilypond
+    git commit flake.lock
+
+When a patch no longer applies, regenerate it (recipe in
+`patches/README.md`) and record what upstream changed in `JOURNAL.md`.
 
 ## Variants and versioning
 

@@ -1,0 +1,108 @@
+# Track upstream LilyPond and propose the move as a pull request.
+#
+# One PR per variant, so a break in the development series never blocks
+# adopting a stable-series update (or vice versa).
+#
+# The job verifies before opening the PR rather than relying on CI to run
+# on it: pull requests created with GITHUB_TOKEN do not trigger other
+# workflows. Set a PAT in the GH_PAT secret to get the normal CI runs on
+# these PRs as well — without it, the verification below is the check, and
+# its results go in the PR body.
+name: update upstream
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  propose:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - input: lilypond-src
+            engine: lilypond
+            label: master (development series)
+          - input: lilypond-stable-src
+            engine: lilypond-stable
+            label: stable/2.26
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: lilypond-wasi
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Record the current pin
+        id: before
+        run: |
+          echo "rev=$(nix flake metadata --json |
+            jq -r '.locks.nodes["${{ matrix.input }}"].locked.rev')" >> "$GITHUB_OUTPUT"
+
+      - name: Advance the pin
+        run: nix flake update ${{ matrix.input }}
+
+      - name: Record the proposed pin
+        id: after
+        run: |
+          echo "rev=$(nix flake metadata --json |
+            jq -r '.locks.nodes["${{ matrix.input }}"].locked.rev')" >> "$GITHUB_OUTPUT"
+          echo "version=$(nix eval --raw .#${{ matrix.engine }}.version)" >> "$GITHUB_OUTPUT"
+
+      - name: Nothing to do?
+        id: changed
+        run: |
+          if [ "${{ steps.before.outputs.rev }}" = "${{ steps.after.outputs.rev }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The real question: does our patch series still apply to the new tip?
+      - name: Patch series applies
+        if: steps.changed.outputs.changed == 'true'
+        id: patches
+        run: nix build .#source${{ matrix.engine == 'lilypond-stable' && '-stable' || '' }} --no-link --print-build-logs
+
+      - name: Engine still builds
+        if: steps.changed.outputs.changed == 'true'
+        run: nix build .#${{ matrix.engine }} --no-link --print-build-logs
+
+      - name: Open the pull request
+        if: steps.changed.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          branch: upstream/${{ matrix.input }}
+          add-paths: flake.lock
+          commit-message: |
+            Advance ${{ matrix.input }} to ${{ steps.after.outputs.version }}
+          title: "Upstream ${{ matrix.label }} → ${{ steps.after.outputs.version }}"
+          body: |
+            Advances `${{ matrix.input }}` — ${{ matrix.label }}.
+
+            | | |
+            |---|---|
+            | from | `${{ steps.before.outputs.rev }}` |
+            | to | `${{ steps.after.outputs.rev }}` |
+            | version | `${{ steps.after.outputs.version }}` |
+
+            Verified on this runner before the PR was opened:
+
+            - `nix build .#source…` — the patch series still applies
+            - `nix build .#${{ matrix.engine }}` — the engine still builds
+
+            Artifacts are pushed to the cache, so merging is cheap. If the
+            patch series had failed, this PR would not exist — check the
+            [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            for a red job instead.
+          labels: upstream

@@ -1,19 +1,11 @@
-# Tailing regression check: does our patch series still apply to upstream
-# LilyPond master, and does the stack still build?
+# Regression check on the *pinned* revision: does the committed lock still
+# build, on both platforms, and does the module still engrave?
 #
-# Runs on Linux only, deliberately. Nix binary caches are per-system, so
-# x86_64-linux artifacts do NOT help an aarch64-darwin laptop — macOS
-# runners would, but bill at 10x on a private repo. What this workflow is
-# actually for is the early-warning signal: upstream moved and our patches
-# stopped applying. That signal is system-independent.
-#
-# NOTE: the stack has so far only ever been built on aarch64-darwin. The
-# first Linux run may surface fixes; that is the point.
-name: tail upstream
+# Upstream drift is a different question, owned by update-upstream.yml,
+# which advances the pin and proposes it as a pull request.
+name: build
 
 on:
-  schedule:
-    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
   workflow_dispatch:
   push:
     paths:
@@ -23,28 +15,8 @@ on:
       - "patches/**"
 
 jobs:
-  patches-still-apply:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Advance the upstream pin
-        run: nix flake update lilypond-src
-
-      - name: Patch series applies to upstream tip
-        run: nix build .#source --no-link --print-build-logs
-
-      - name: Report the pinned revision
-        run: |
-          nix flake metadata --json |
-            jq -r '.locks.nodes["lilypond-src"].locked |
-                   "upstream: \(.rev) (\(.lastModified | todate))"'
-
   build-stack:
     runs-on: ubuntu-latest
-    needs: patches-still-apply
     steps:
       - uses: actions/checkout@v4
 
@@ -75,7 +47,6 @@ jobs:
   # cache is already populated.
   build-macos:
     runs-on: macos-14
-    needs: patches-still-apply
     steps:
       - uses: actions/checkout@v4
 
