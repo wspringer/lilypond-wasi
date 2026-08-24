@@ -69,3 +69,51 @@ jobs:
         run: |
           nix build .#lilypond .#assets
           echo "stack + engine built on $(uname -m)-linux"
+
+  # aarch64-darwin artifacts — the ones a Mac laptop can actually use.
+  # Free runners now that the repo is public; mostly cache hits, since the
+  # cache is already populated.
+  build-macos:
+    runs-on: macos-14
+    needs: patches-still-apply
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: lilypond-wasi
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Dependency stack
+        run: nix build .#wasi-deps --no-link --print-build-logs
+
+      - name: Engine + assets
+        run: nix build .#lilypond .#assets --no-link --print-build-logs
+
+      - name: Engrave a score inside wasmtime
+        run: |
+          nix build .#lilypond -o result-lilypond
+          nix build .#assets   -o result-assets
+          guile=$(nix build '.#wasi-guile.out' --print-out-paths)
+          mkdir -p work/home work/tmp work/cache/fontconfig work/lily-lib
+          printf '\\version "2.27.3"\n{ c%s e%s g%s }\n' "'" "'" "'" > work/in.ly
+          nix develop --command wasmtime run \
+            -W exceptions=y -C cache=n \
+            --dir "$PWD/work::/work" \
+            --dir "$PWD/result-assets/share/lilypond::/lilypond" \
+            --dir "$guile/share/guile/3.0::/guile" \
+            --dir "$guile/lib/guile/3.0/ccache::/guile-ccache" \
+            --env FONTCONFIG_FILE=/lilypond/fonts/fonts.conf \
+            --env GUILE_LOAD_PATH=/guile \
+            --env GUILE_LOAD_COMPILED_PATH=/guile-ccache \
+            --env GUILE_SYSTEM_PATH=/guile \
+            --env GUILE_SYSTEM_COMPILED_PATH=/guile-ccache \
+            --env HOME=/work/home --env LILYPOND_DATADIR=/lilypond \
+            --env LILYPOND_LIBDIR=/work/lily-lib --env TMPDIR=/work/tmp \
+            --env XDG_CACHE_HOME=/work/cache --argv0 /lilypond \
+            result-lilypond/bin/lilypond.wasm \
+            --formats=svg -o /work/out /work/in.ly
+          test -s work/out.svg
+          echo "engraved $(wc -c < work/out.svg) bytes of SVG on $(uname -m)-darwin"
