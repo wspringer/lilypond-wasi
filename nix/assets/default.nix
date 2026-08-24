@@ -14,6 +14,7 @@
   stdenvNoCC,
   t1utils,
   texlive,
+  version,
 }:
 let
   kpathseaBin = texlive.pkgs.kpathsea.out;
@@ -31,7 +32,7 @@ let
 in
 stdenvNoCC.mkDerivation {
   pname = "lilypond-assets";
-  version = "2.27.3-dev";
+  inherit version;
 
   inherit src;
 

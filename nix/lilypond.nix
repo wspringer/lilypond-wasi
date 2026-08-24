@@ -20,12 +20,13 @@
   pcre2,
   src,
   stdenv,
+  version,
   zlib,
 }:
 
 stdenv.mkDerivation {
   pname = "lilypond-wasi";
-  version = "2.27.3-dev";
+  inherit version;
 
   inherit src;
   # the source tree already carries the ./patches series via .#source

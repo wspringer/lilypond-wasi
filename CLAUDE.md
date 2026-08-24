@@ -32,6 +32,33 @@ path; we adapt it to keep the PS backend and disable only the gs calls.)
 3. Rebuild the furthest stage previously reached; fix or record what broke
 4. Note the upstream rev and outcome in `JOURNAL.md`
 
+## Variants and versioning
+
+Two LilyPond generations are tracked, sharing one patch series and one WASI
+dependency stack:
+
+| Output | Branch | Version |
+|---|---|---|
+| `.#lilypond`, `.#assets` | `master` (dev, becomes 2.28) | 2.27.x |
+| `.#lilypond-stable`, `.#assets-stable` | `stable/2.26` | 2.26.x |
+
+LilyPond uses even minors for stable, odd for development. The stable line
+matches what nixpkgs ships and what analog's native pipeline engraves with;
+master is the tailing target and the branch patches would be upstreamed to.
+Both patches applied clean to both generations (verified 2026-08-24) — if
+that ever stops being true, split into `patches/` and `patches-stable/`.
+
+**Never hardcode a version.** It is read from upstream's own `VERSION` file
+and suffixed with the pinned revision — `2.27.3+g6069e16` — so it cannot
+drift from what was actually built. A flake-level assert requires
+`lilypond.version == assets.version`: the engine loads its Scheme library
+out of the asset tree, and mixing generations fails confusingly at run time.
+
+Our *packaging* version is a separate git tag (`v0.1.0`), bumped when the
+patches or build change rather than when upstream moves. Tagging triggers
+`.github/workflows/release.yml`, which publishes both variants' modules and
+asset tarballs with SHA256SUMS.
+
 ## Build stages
 
 Checkpoints, in order. Do not skip ahead: prove each stage with a build (and

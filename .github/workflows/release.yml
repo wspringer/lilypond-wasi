@@ -1,0 +1,91 @@
+# Publish artifacts on a tag.
+#
+# Consumers without Nix get the module and its runtime data as plain files;
+# Nix users keep getting them from the cache. Artifact filenames carry the
+# derived version (upstream release + upstream revision), so a download can
+# always be traced back to the exact LilyPond it was built from.
+#
+# Tag with our own packaging semver, e.g. `git tag v0.1.0 && git push --tags`.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - uses: cachix/cachix-action@v15
+        with:
+          name: lilypond-wasi
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build both variants
+        run: |
+          nix build .#lilypond        -o result-dev
+          nix build .#assets          -o result-dev-assets
+          nix build .#lilypond-stable -o result-stable
+          nix build .#assets-stable   -o result-stable-assets
+
+      - name: Stage artifacts
+        id: stage
+        run: |
+          mkdir -p dist
+          for variant in dev stable; do
+            ver=$(nix eval --raw ".#$( [ $variant = dev ] && echo lilypond || echo lilypond-stable ).version")
+            cp "result-$variant/bin/lilypond.wasm" "dist/lilypond-$ver.wasm"
+            tar -C "result-$variant-assets/share" -czf "dist/lilypond-assets-$ver.tar.gz" lilypond
+            echo "$variant: $ver"
+          done
+          ( cd dist && shasum -a 256 * > SHA256SUMS )
+          cat dist/SHA256SUMS
+
+      - name: Runtime manifest
+        run: |
+          nix eval --json --expr '
+            let f = builtins.getFlake (toString ./.); in {
+              dev    = f.packages.aarch64-darwin.lilypond.version;
+              stable = f.packages.aarch64-darwin.lilypond-stable.version;
+            }' --impure > dist/versions.json 2>/dev/null || true
+          cat > dist/RUNTIME.md <<'EOF'
+          # Running lilypond.wasm
+
+          Needs a WASI Preview 1 host with WebAssembly exception handling
+          (the module uses the modern try_table/exnref encoding), the asset
+          tree mounted, and Guile's Scheme library available.
+
+              wasmtime run -W exceptions=y \
+                --dir "$PWD/work::/work" \
+                --dir "$PWD/lilypond::/lilypond" \
+                --dir "<guile>/share/guile/3.0::/guile" \
+                --dir "<guile>/lib/guile/3.0/ccache::/guile-ccache" \
+                --env LILYPOND_DATADIR=/lilypond \
+                --env FONTCONFIG_FILE=/lilypond/fonts/fonts.conf \
+                --env GUILE_LOAD_PATH=/guile \
+                --env GUILE_LOAD_COMPILED_PATH=/guile-ccache \
+                --env GUILE_SYSTEM_PATH=/guile \
+                --env GUILE_SYSTEM_COMPILED_PATH=/guile-ccache \
+                --env HOME=/work/home --env TMPDIR=/work/tmp \
+                --env XDG_CACHE_HOME=/work/cache \
+                --argv0 /lilypond \
+                lilypond.wasm --formats=svg -o /work/out /work/in.ly
+
+          Formats: SVG and EPS. PDF and PNG need Ghostscript, which cannot
+          run under WASI — convert host-side, or use the native LilyPond.
+          EOF
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: dist/RUNTIME.md
+          generate_release_notes: true

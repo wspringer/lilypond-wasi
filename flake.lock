@@ -16,6 +16,23 @@
         "type": "gitlab"
       }
     },
+    "lilypond-stable-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1787514057,
+        "narHash": "sha256-0/P7pWXufvqUNQ1cXGoWP9spkbMaJaHNfbOl72OmJf4=",
+        "owner": "lilypond",
+        "repo": "lilypond",
+        "rev": "8d6b320eae92abb23b804820c1ff1c15d69d51d0",
+        "type": "gitlab"
+      },
+      "original": {
+        "owner": "lilypond",
+        "ref": "stable/2.26",
+        "repo": "lilypond",
+        "type": "gitlab"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1770622275,
@@ -35,6 +52,7 @@
     "root": {
       "inputs": {
         "lilypond-src": "lilypond-src",
+        "lilypond-stable-src": "lilypond-stable-src",
         "nixpkgs": "nixpkgs"
       }
     }
