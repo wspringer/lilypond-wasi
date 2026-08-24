@@ -65,6 +65,22 @@ where possible a wasmtime run) before starting the next.
   Guile/GC/Pango/Fontconfig/FreeType stack, not LilyPond's own SVG code.
   Check it before fighting a stage-2 battle; hlolli may have won it already.
 
+## Binary cache
+
+Everything under `wasm32-unknown-wasi` in the store is **unobtainable from
+any public cache** — Hydra never builds `pkgsCross.wasi32`, on any nixpkgs
+pin. Losing those paths means rebuilding the cross-LLVM toolchain from
+source (hours). 2.14 GB across 108 paths; the rest of the 63 GB build
+closure is stock nixpkgs that cache.nixos.org serves.
+
+    ./scripts/push-cache.sh [cache-name]     # after: cachix authtoken <t>
+
+Caches are **per-system**: pushing from this laptop banks aarch64-darwin
+artifacts only. `.github/workflows/tail-upstream.yml` runs Linux-only by
+design — its job is catching upstream drift (system-independent), not
+producing Mac artifacts, because macOS runners bill at 10x on a private
+repo.
+
 ## Conventions
 
 - Record every session's findings (upstream rev, what built, what broke,

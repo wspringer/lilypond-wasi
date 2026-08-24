@@ -1,0 +1,72 @@
+# Tailing regression check: does our patch series still apply to upstream
+# LilyPond master, and does the stack still build?
+#
+# Runs on Linux only, deliberately. Nix binary caches are per-system, so
+# x86_64-linux artifacts do NOT help an aarch64-darwin laptop — macOS
+# runners would, but bill at 10x on a private repo. What this workflow is
+# actually for is the early-warning signal: upstream moved and our patches
+# stopped applying. That signal is system-independent.
+#
+# NOTE: the stack has so far only ever been built on aarch64-darwin. The
+# first Linux run may surface fixes; that is the point.
+name: tail upstream
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+  push:
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "nix/**"
+      - "patches/**"
+
+jobs:
+  patches-still-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Advance the upstream pin
+        run: nix flake update lilypond-src
+
+      - name: Patch series applies to upstream tip
+        run: nix build .#source --no-link --print-build-logs
+
+      - name: Report the pinned revision
+        run: |
+          nix flake metadata --json |
+            jq -r '.locks.nodes["lilypond-src"].locked |
+                   "upstream: \(.rev) (\(.lastModified | todate))"'
+
+  build-stack:
+    runs-on: ubuntu-latest
+    needs: patches-still-apply
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      # Optional: set CACHIX_AUTH_TOKEN in repo secrets to populate the
+      # cache with x86_64-linux artifacts too.
+      - uses: cachix/cachix-action@v15
+        if: env.CACHIX_AUTH_TOKEN != ''
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        with:
+          name: lilypond-wasm
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Dependency stack
+        run: nix build .#wasi-deps --no-link --print-build-logs
+
+      - name: Engine
+        run: nix build .#lilypond --no-link --print-build-logs
+
+      - name: Engrave smoke test
+        run: |
+          nix build .#lilypond .#assets
+          echo "stack + engine built on $(uname -m)-linux"
