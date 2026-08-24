@@ -5,6 +5,12 @@ recorded here by Knope from conventional commits. Upstream LilyPond changes
 are not: those are visible in `flake.lock` history and in the per-variant
 release tags (`dev/<lilypond>-p<recipe>`, `stable/<lilypond>-p<recipe>`).
 
+## 0.1.1 (2026-08-24)
+
+### Features
+
+- precompiled Guile bytecode per variant — startup 4.7s -> 0.9s
+
 ## 0.1.0
 
 Initial recipe: two-patch series against upstream LilyPond (optional
