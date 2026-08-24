@@ -75,6 +75,21 @@ closure is stock nixpkgs that cache.nixos.org serves.
 
     ./scripts/push-cache.sh [cache-name]     # after: cachix authtoken <t>
 
+Until that cache exists, the only thing standing between you and a
+multi-hour toolchain rebuild is local GC roots. The `result-*` symlinks
+cover the runtime closures, but the **cross toolchain is a build-time
+dependency and is not covered by them** — it needs explicit roots:
+
+    DRV=$(nix path-info --derivation .#lilypond)
+    nix-store -qR --include-outputs "$DRV" | grep -v '\.drv$' |
+      grep -E 'wasm32-unknown-wasi|wasilibc' | while read -r p; do
+        nix-store --add-root "result-tc-$(basename $p | cut -d- -f1 | cut -c1-8)" \
+          --indirect --realise "$p" >/dev/null
+      done
+
+Verify with `nix-store --gc --print-dead` — none of the wasi paths should
+appear. (Renaming or moving the checkout orphans every root; redo this.)
+
 Caches are **per-system**: pushing from this laptop banks aarch64-darwin
 artifacts only. `.github/workflows/tail-upstream.yml` runs Linux-only by
 design — its job is catching upstream drift (system-independent), not
