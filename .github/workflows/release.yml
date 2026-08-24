@@ -42,10 +42,18 @@ jobs:
         run: |
           mkdir -p dist
           for variant in dev stable; do
-            ver=$(nix eval --raw ".#$( [ $variant = dev ] && echo lilypond || echo lilypond-stable ).version")
-            cp "result-$variant/bin/lilypond.wasm" "dist/lilypond-$ver.wasm"
-            tar -C "result-$variant-assets/share" -czf "dist/lilypond-assets-$ver.tar.gz" lilypond
-            echo "$variant: $ver"
+            attr=$( [ "$variant" = dev ] && echo lilypond || echo lilypond-stable )
+            ver=$(nix eval --raw ".#$attr.version")
+            # The version carries semver build metadata (2.27.3+g6069e16).
+            # A "+" in a download URL decodes as a space in enough clients
+            # to be a nuisance, so filenames use "-" and name the line
+            # explicitly rather than relying on LilyPond's even/odd
+            # stable/development convention being common knowledge.
+            slug="${ver/+/-}-$variant"
+            cp "result-$variant/bin/lilypond.wasm" "dist/lilypond-wasi-$slug.wasm"
+            tar -C "result-$variant-assets/share" \
+                -czf "dist/lilypond-wasi-assets-$slug.tar.gz" lilypond
+            echo "$variant -> lilypond-wasi-$slug.wasm (version $ver)"
           done
           ( cd dist && shasum -a 256 * > SHA256SUMS )
           cat dist/SHA256SUMS
