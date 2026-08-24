@@ -2,6 +2,25 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-24 — engine quirk: single-component -I dirs silently fail
+
+Found while building lilypond-mcp's wasm backend: `-I /inc` (any
+single-component absolute dir, any name) never resolves includes — the
+File_name parse/reassembly in File_path::find mangles the concatenation
+(such a dir parses as root+basename with empty dir part). `-I /deep/inc`
+works; absolute \include paths through the same mount work; guile-level
+stat/opendir/readdir on the mount all work. Reproduces identically under
+wasmtime and node:wasi, so it is engine-level, not host-level — and
+plausibly affects native LilyPond too (untested; real-world include dirs
+are rarely one component deep, which is why nobody noticed).
+
+Workaround: mount include dirs at two-component guest paths. Candidate
+upstream report after verifying against native master.
+
+Also: node:wasi fd_readdir, preopen-root stat, symlinked host paths, and
+guest-name characters were all suspected and all exonerated — the debug
+trail is a case study in bisecting host-vs-engine.
+
 ## 2026-08-24 — bytecode precompilation: 4.7 s -> 0.9 s (issue #3)
 
 nix/bytecode runs each variant's engine once under wasmtime with a
