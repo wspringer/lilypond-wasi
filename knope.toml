@@ -22,3 +22,10 @@ enabled = true
 [github]
 owner = "wspringer"
 repo = "lilypond-wasi"
+
+# Change files are the only recipe-release source — commit subjects
+# (including squash-merge PR titles) never bump recipe-version. This is
+# what makes "no change file = no recipe bump = no re-release" a
+# guarantee rather than a title-discipline convention.
+[changes]
+ignore_conventional_commits = true
