@@ -79,6 +79,10 @@ runCommand "lilypond-wasi-bytecode-${lilypond.version}"
   run_engrave -dbackend=ps -dcrop --formats=eps -o /work/compile-eps /work/compile-all.ly || true
   test -s work/compile-eps.cropped.eps
 
+  # Cairo pass — PDF and PNG straight from the engine, no subprocesses.
+  run_engrave -dbackend=cairo -dcrop --formats=pdf,png -o /work/compile-cairo /work/compile-all.ly
+  test -s work/compile-cairo.cropped.pdf
+
   generated="$data/guile-bytecode"
   test -d "$generated"
 
@@ -114,7 +118,7 @@ runCommand "lilypond-wasi-bytecode-${lilypond.version}"
   fi
 
   for required in lily backend-library font-encodings \
-    framework-svg output-svg framework-ps output-ps page paper-system; do
+    framework-svg output-svg framework-ps output-ps framework-cairo page paper-system; do
     if [ ! -f "$out/ccache/lily/$required.go" ]; then
       echo "required module missing from bytecode cache: $required" >&2
       exit 1

@@ -9,6 +9,7 @@
   (lily output-svg)
   (lily framework-ps)
   (lily output-ps)
+  (lily framework-cairo)
   (lily page))
 
 \header {

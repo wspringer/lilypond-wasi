@@ -128,6 +128,8 @@
           wasi-libunistring = wasi.libunistring;
           wasi-pango = wasi.pango;
           wasi-guile = wasi.guile;
+          wasi-pixman = wasi.pixman;
+          wasi-cairo = wasi.cairo;
 
           wasi-deps = pkgs.linkFarm "lilypond-wasi-deps" [
             { name = "zlib"; path = wasi.zlib; }

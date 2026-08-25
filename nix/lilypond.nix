@@ -4,6 +4,7 @@
 {
   boehmgc,
   buildPackages,
+  cairo,
   expat,
   fontconfig,
   freetype,
@@ -46,6 +47,7 @@ stdenv.mkDerivation {
 
   buildInputs = [
     boehmgc
+    cairo
     expat
     fontconfig
     freetype
@@ -63,7 +65,6 @@ stdenv.mkDerivation {
   ];
 
   configureFlags = [
-    "--disable-cairo"
     "--disable-documentation"
     "--disable-fonts"
     "--disable-gs-api"
@@ -88,6 +89,8 @@ stdenv.mkDerivation {
     # static.
     export BDWGC_CFLAGS="$("$PKG_CONFIG" --cflags bdw-gc)"
     export BDWGC_LIBS="$("$PKG_CONFIG" --static --libs bdw-gc)"
+    export CAIRO_CFLAGS="$("$PKG_CONFIG" --cflags cairo)"
+    export CAIRO_LIBS="$("$PKG_CONFIG" --static --libs cairo)"
     export FONTCONFIG_CFLAGS="$("$PKG_CONFIG" --cflags fontconfig)"
     export FONTCONFIG_LIBS="$("$PKG_CONFIG" --static --libs fontconfig)"
     export FREETYPE2_CFLAGS="$("$PKG_CONFIG" --cflags freetype2)"

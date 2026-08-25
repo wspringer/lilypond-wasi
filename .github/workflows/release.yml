@@ -118,9 +118,9 @@ jobs:
             --env HOME=/work/home --env LILYPOND_DATADIR=/lilypond \
             --env LILYPOND_LIBDIR=/work/lily-lib --env TMPDIR=/work/tmp \
             --env XDG_CACHE_HOME=/work/cache --argv0 /lilypond \
-            result-engine/bin/lilypond.wasm --formats=svg -o /work/out /work/in.ly
-          test -s work/out.svg
-          echo "engraved $(wc -c < work/out.svg) bytes — publishing"
+            result-engine/bin/lilypond.wasm -dbackend=cairo --formats=pdf,svg -o /work/out /work/in.ly
+          test -s work/out.pdf && test -s work/out.svg
+          echo "engraved pdf + svg — publishing"
 
       - name: Stage artifacts
         run: |
@@ -178,10 +178,11 @@ jobs:
               "TMPDIR": "/work/tmp",
               "XDG_CACHE_HOME": "/work/cache"
             },
-            "formats": ["svg", "eps"],
+            "formats": ["pdf", "png", "svg", "eps"],
             "knownIssues": {
-              "epsExitNonzero": "with -dcrop, the run exits nonzero AFTER writing complete EPS output (stubbed Ghostscript conversion); check for the artifact, not the exit code"
-            }
+              "epsExitNonzero": "ps-backend runs (-dbackend=ps, eps) with -dcrop exit nonzero AFTER writing complete output (stubbed Ghostscript conversion); check for the artifact, not the exit code. The cairo backend (pdf/png/svg) exits cleanly."
+            },
+            "backendHint": "use -dbackend=cairo for pdf and png; fonts come out embedded and subsetted (CID Type 0C)"
           }
           EOF
           python3 -c "import json; json.load(open('dist/runtime-manifest.json')); print('manifest valid')"

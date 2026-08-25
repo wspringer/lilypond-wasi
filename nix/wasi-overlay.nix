@@ -398,6 +398,89 @@ else
       meta = allPlatforms old;
     });
 
+    # pixman for cairo: library only — the test utilities want signals and
+    # libpng-through-setjmp, none of which the library itself needs.
+    pixman = prev.pixman.overrideAttrs (old: {
+      # Threadless on purpose: meson's dependency('threads') succeeds on
+      # wasi-libc and -pthread then lands in pixman-1.pc, from where
+      # pkg-config --static spreads it into every consumer's compiles —
+      # flipping wasi-libc into the threaded model (TLS errno, shared
+      # memory) and breaking the final single-threaded link.
+      postPatch = (old.postPatch or "") + ''
+        substituteInPlace meson.build \
+          --replace-fail "dep_threads = dependency('threads')" \
+                         "dep_threads = disabler()"
+      '';
+      mesonFlags = (old.mesonFlags or [ ]) ++ [
+        "-Dtests=disabled"
+        "-Ddemos=disabled"
+      ];
+      doCheck = false;
+      meta = allPlatforms old;
+    });
+
+    # cairo, for LilyPond's cairo backend on wasm: PDF/PS/SVG/PNG surfaces
+    # with the freetype+fontconfig font backend; every window-system
+    # backend disabled. mesonFlags is REPLACED, not extended: the upstream
+    # expression's flag list contains a cross-file whose platform table
+    # throws on wasi (ipc_rmid_deferred_release - X11 shm, irrelevant here).
+    # The png surface pulls libpng headers, hence the shared sjlj/EH flags.
+    cairo = (prev.cairo.override {
+      x11Support = false;
+      gobjectSupport = false;
+    }).overrideAttrs (old: {
+      # no meson option gates the cairo-script interpreter; its csi-* tools
+      # link with --start-group, which wasm-ld refuses — skip the subdir
+      postPatch = (old.postPatch or "") + ''
+        sed -i "s/if conf.get('CAIRO_HAS_INTERPRETER', 0) == 1/if false/" util/meson.build
+        # Remove the real-pthread probe candidates: -pthread links fine on
+        # wasi-libc but flips it into the threaded model (TLS errno,
+        # atomics), clashing with our single-threaded stack at final link.
+        # What remains is cairo's fake variant (real: false), which uses its
+        # built-in no-op mutexes — the intended single-threaded mode.
+        substituteInPlace meson.build \
+          --replace-fail "[['-D_REENTRANT'], ['-lpthread']]," "" \
+          --replace-fail "[['-pthread'], []]," ""
+        # wasi-libc has no tmpfile(); provide one on the runtime's TMPDIR
+        cat ${../patches/deps/cairo/tmpfile-shim.c} >> src/cairo-misc.c
+      '';
+      mesonFlags = [
+        "-Ddefault_library=static"
+        "-Dfontconfig=enabled"
+        "-Dfreetype=enabled"
+        "-Dpng=enabled"
+        "-Dzlib=enabled"
+        "-Dglib=disabled"
+        "-Dxlib=disabled"
+        "-Dxcb=disabled"
+        "-Dquartz=disabled"
+        "-Ddwrite=disabled"
+        "-Dspectre=disabled"
+        "-Dtee=disabled"
+        "-Dsymbol-lookup=disabled"
+        "-Dlzo=disabled"
+        "-Dtests=disabled"
+        "-Dgtk_doc=false"
+      ];
+      # lzo (test tool needs clock()) and a target-platform docbook-xsl
+      # ride along in the inputs; neither is needed for the library.
+      # They surface in propagatedBuildInputs after splicing, so filter both
+      # lists.
+      buildInputs = builtins.filter (d: !(builtins.elem (lib.getName d) [ "lzo" "docbook-xsl-nons" "docbook-xsl" ])) (old.buildInputs or [ ]);
+      propagatedBuildInputs = builtins.filter (d: !(builtins.elem (lib.getName d) [ "lzo" "docbook-xsl-nons" "docbook-xsl" ])) (old.propagatedBuildInputs or [ ]);
+      env = (old.env or { }) // {
+        # HAVE_CTIME_R: wasi-libc declares it but cairo's probe misses,
+        # and the static fallback then collides with the libc declaration
+        NIX_CFLAGS_COMPILE = sjljFlags + " -DHAVE_CTIME_R=1";
+        NIX_LDFLAGS = "-lsetjmp";
+      };
+      postInstall = (old.postInstall or "") + ''
+        for o in $outputs; do mkdir -p ''${!o}; done
+      '';
+      doCheck = false;
+      meta = allPlatforms old;
+    });
+
     # GMP without assembly, and scratch space on the heap instead of
     # alloca — nested arithmetic can exhaust wasm's fixed stack.
     gmp = prev.gmp.overrideAttrs (old: {

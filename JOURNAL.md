@@ -2,6 +2,42 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-08-25 — CAIRO ON WASI: the wasm engine emits InDesign-ready PDF (issue #6)
+
+No prior art existed (only Emscripten ports). Both variants now build with
+the cairo backend: `-dbackend=cairo --formats=pdf,png` inside wasmtime
+produces a cropped PDF (Producer: cairo 1.18.4, Emmentaler embedded and
+subsetted as CID Type 0C — the format InDesign accepts) and PNG previews,
+geometry identical to the native pipeline, clean exit (no subprocess wart
+on this path). Engine grows 12.9 -> 16.4 MB.
+
+The battles, in order:
+1. pixman: tests want signals — library-only. Clean.
+2. cairo eval: nixpkgs flag list embeds a cross-file platform table that
+   THROWS on wasi (ipc_rmid_deferred_release) — mesonFlags replaced
+   wholesale, never extended.
+3. lzo + a target-platform docbook-xsl ride cairo's inputs; filtered.
+4. ctime_r: cairo's probe misses it, its static fallback then collides
+   with wasi-libc's declaration — -DHAVE_CTIME_R=1.
+5. cairo-script interpreter tools link with --start-group (wasm-ld
+   refuses); no meson option gates them — subdir patched off.
+6. **The pthread trap, the big one:** meson's dependency(threads) probe
+   SUCCEEDS on wasi-libc, -pthread lands in pixman-1.pc, and pkg-config
+   --static spreads it into every consumer TU — silently flipping
+   wasi-libc into the threaded model (TLS errno, shared memory) and
+   breaking the final link with errors that name innocent objects
+   (gmem.c.o, midi-stream.o). Zero greppable evidence: stepmake builds
+   silently. Fix at the source: pixman threadless (dep_threads =
+   disabler()), cairo's probe list cut to its fake-mutex variant.
+7. tmpfile: wasi-libc has neither tmpfile nor mkstemp ("WASI has no temp
+   directories") — hand-rolled shim on the runtime's TMPDIR appended to
+   cairo-misc.c (patches/deps/cairo/tmpfile-shim.c).
+
+Bytecode driver + required list gained framework-cairo (69 modules);
+release manifest formats now pdf,png,svg,eps; the release verify gate
+engraves PDF. Remaining: lilypond-mcp's wasm backend switches to the
+cairo pass once the release lands.
+
 ## 2026-08-24 — engine quirk: single-component -I dirs silently fail
 
 Found while building lilypond-mcp's wasm backend: `-I /inc` (any
