@@ -98,18 +98,20 @@ Consequences worth understanding:
 - The workflow **engraves a score under wasmtime before publishing**. A
   module that cannot engrave never becomes a release.
 
-The recipe version is managed by **Knope** (`knope.toml`): conventional
-commits describing our patches/overlay/build keep a bot-maintained release
-PR up to date; merging it bumps `recipe-version` and `CHANGELOG.md`. Knope
-never touches the per-variant release tags — it cannot know LilyPond
-versions.
+The recipe version is managed by **Knope** (`knope.toml`): change files
+in `.changeset/` describing our patches/overlay/build keep a
+bot-maintained release PR up to date; merging it bumps `recipe-version`
+and `CHANGELOG.md`. Knope never touches the per-variant release tags —
+it cannot know LilyPond versions.
 
 Releases are cut mechanically by `tag-releases.yml`: whenever `flake.lock`
 or `recipe-version` changes on main, it derives `<variant>/<lilypond>-p<recipe>`
 per variant and dispatches release.yml for any tag that does not exist yet.
 Merging an upstream PR or the knope release PR *is* the release decision —
-no manual tagging. (Conventional-commit discipline matters here: `chore:`
-and `docs:` do not bump the recipe, so they do not re-release anything.)
+no manual tagging. (Change-file discipline matters here: a PR without a
+change file does not bump the recipe, so it does not re-release anything —
+which is exactly right for journal entries, workflow tuning, and the
+automated upstream pin bumps.)
 
 
 ## Build stages
@@ -176,19 +178,34 @@ repo.
 
 ## Conventions
 
-- **Conventional commits, always.** Knope derives the recipe version and
-  changelog from commit subjects, so here they carry release semantics:
-  - `fix:` — a correction to the recipe (patches, overlay, build flags).
-    Bumps patch, re-releases **both** variants.
-  - `feat:` — new recipe capability (a new format, a new package in the
-    stack). Bumps minor, re-releases both variants.
-  - `fix!:` / `feat!:` or `BREAKING CHANGE:` — consumers must adapt
-    (artifact naming, runtime contract, mount layout). Bumps major.
-  - `chore:`, `docs:`, `ci:` — no recipe bump, **no release**. Use these
-    for everything that doesn't change what gets built: journal entries,
-    workflow tuning, documentation.
-  - Upstream pin bumps arrive via the automated PRs and are releases of
-    the *upstream* axis, not the recipe — never write a `fix:` for one.
+- **Change files carry recipe-release semantics.** Any PR that changes
+  what gets built (patches, overlay, build flags, artifact contents) must
+  include a change file — `knope document-change`, or by hand in
+  `.changeset/<slug>.md`:
+
+  ```markdown
+  ---
+  default: patch
+  ---
+
+  #### One-line summary for the changelog
+  ```
+
+  Change files survive squash merges structurally (they are files in the
+  PR), allow several changelog entries per PR, and Knope consumes them at
+  release. Bump types, in recipe terms:
+  - `patch` — a correction to the recipe. Re-releases **both** variants.
+  - `minor` — new recipe capability (a new format, a new package in the
+    stack). Re-releases both variants.
+  - `major` — consumers must adapt (artifact naming, runtime contract,
+    mount layout).
+- **No change file means no recipe bump and no release** — correct for
+  journal entries, workflow tuning, documentation. Deliberately also
+  correct for the automated upstream PRs: pin bumps are releases of the
+  *upstream* axis, not the recipe — never add a change file to one.
+- **Conventional commit subjects stay** (`fix:`, `feat:`, `chore:`, …) as
+  hygiene: squash merges use the PR title as the commit subject, and a
+  readable history matters. They just no longer decide versions.
 - Record every session's findings (upstream rev, what built, what broke,
   why) in `JOURNAL.md` — negative results included; they are the map.
 - Builds happen through the flake only. No ad-hoc `./configure` runs outside
