@@ -5,6 +5,16 @@ recorded here by Knope from conventional commits. Upstream LilyPond changes
 are not: those are visible in `flake.lock` history and in the per-variant
 release tags (`dev/<lilypond>-p<recipe>`, `stable/<lilypond>-p<recipe>`).
 
+## 0.1.3 (2026-08-25)
+
+### Features
+
+- cairo backend in the wasm engine — native PDF and PNG
+
+### Fixes
+
+- normalize permissions in release tarballs (#8)
+
 ## 0.1.2 (2026-08-24)
 
 ### Features
