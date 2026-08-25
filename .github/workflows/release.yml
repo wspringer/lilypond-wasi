@@ -128,12 +128,25 @@ jobs:
           slug="${{ steps.tag.outputs.slug }}"
           mkdir -p dist
           cp result-engine/bin/lilypond.wasm "dist/lilypond-wasi-$slug.wasm"
-          tar -C result-assets/share -czf "dist/lilypond-wasi-assets-$slug.tar.gz" lilypond
-          tar -C result-bytecode -czf "dist/lilypond-wasi-bytecode-$slug.tar.gz" ccache
+          chmod u+w "dist/lilypond-wasi-$slug.wasm"
+
+          # Normalize permissions before tarring: Nix-store modes (0444
+          # files, non-writable dirs) inside tarballs break GNU tar
+          # extraction on consumers and make caches undeletable.
+          stage_tar() { # <src-dir> <entry> <dest.tar.gz>
+            local tmp
+            tmp=$(mktemp -d)
+            cp -R "$1/$2" "$tmp/$2"
+            chmod -R u+w "$tmp/$2"
+            tar -C "$tmp" -czf "$3" "$2"
+            rm -rf "$tmp"
+          }
+          stage_tar result-assets/share lilypond "dist/lilypond-wasi-assets-$slug.tar.gz"
+          stage_tar result-bytecode ccache "dist/lilypond-wasi-bytecode-$slug.tar.gz"
           # Guile's compiled stdlib. With the bytecode caches complete the
           # engine never reads Guile's .scm sources (verified 2026-08-24),
           # so ccache alone makes releases self-sufficient for no-Nix hosts.
-          tar -C result-guile/lib/guile/3.0 -czf "dist/lilypond-wasi-guile-$slug.tar.gz" ccache
+          stage_tar result-guile/lib/guile/3.0 ccache "dist/lilypond-wasi-guile-$slug.tar.gz"
           cat > dist/provenance.json <<EOF
           {
             "variant": "${{ steps.tag.outputs.variant }}",
