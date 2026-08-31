@@ -3,11 +3,11 @@
     "lilypond-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1787397661,
-        "narHash": "sha256-QcnvCGZ+6r3cpJEG0esZpgecA51qu/I0JNxR26XxP2o=",
+        "lastModified": 1787912391,
+        "narHash": "sha256-+X3iW2TL+lUnZ2bSBRvbxkUPX7YFFb19UdSi+9iLB5E=",
         "owner": "lilypond",
         "repo": "lilypond",
-        "rev": "32e3cc200f9073ce6cdcb2acd2fa8b05aa1f6bff",
+        "rev": "b1311a5694133c9694e180cdbdc693614334d61d",
         "type": "gitlab"
       },
       "original": {
