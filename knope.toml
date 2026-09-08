@@ -23,6 +23,13 @@ enabled = true
 owner = "wspringer"
 repo = "lilypond-wasi"
 
+# The automated upstream PRs carry no change file on purpose: a pin bump
+# releases the *upstream* axis, not the recipe, and a change file would
+# re-release both variants with an unchanged recipe. Skip the bot's
+# "changes must be documented" check for them via their label.
+[bot.checks]
+skip_labels = ["upstream"]
+
 # Change files are the only recipe-release source — commit subjects
 # (including squash-merge PR titles) never bump recipe-version. This is
 # what makes "no change file = no recipe bump = no re-release" a
