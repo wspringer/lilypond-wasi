@@ -2,6 +2,31 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-09-08 — Release plumbing: readable upstream PRs, mergeable, and a tag scheme that sees pin bumps
+
+Upstream master 32e3cc2 -> ca8dc08 (merged as #11); both engines built,
+patch series clean. Three plumbing gaps found and fixed along the way:
+
+1. **Upstream PRs said nothing about the move.** update-upstream.yml now
+   asks GitLab's compare API for the commit list (capped at 30) and puts
+   it in the PR body with a compare link. API failure degrades to a note,
+   never a red job.
+2. **Knope Bot blocked merging them.** With ignore_conventional_commits
+   the "changes must be documented" check demanded a change file on every
+   PR — including pin bumps, which deliberately carry none. Fixed with
+   `[bot.checks] skip_labels = ["upstream"]` in knope.toml; the workflow
+   already labels its PRs.
+3. **Merged pin bumps cut no release.** The tag was derived from upstream
+   VERSION + recipe only; master moves many times within one VERSION, so
+   dev/2.27.3-p0.1.3 already existed and the tagger skipped. Dev tags now
+   carry the full version (dev/2.27.3+gca8dc08-p0.1.3); stable stays
+   rev-less (its pin only moves on real upstream releases). Artifact
+   filenames unchanged. First release under the scheme published and
+   engrave-verified.
+
+No change files for any of this: workflow/release plumbing, recipe
+untouched.
+
 ## 2026-08-25 — CAIRO ON WASI: the wasm engine emits InDesign-ready PDF (issue #6)
 
 No prior art existed (only Emscripten ports). Both variants now build with
