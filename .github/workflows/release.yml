@@ -1,7 +1,10 @@
 # Publish one variant, on a tag that says exactly what it is.
 #
-#   stable/2.26.1-p0.1.0    LilyPond 2.26.1 (stable line), built by recipe 0.1.0
-#   dev/2.27.4-p0.1.0       LilyPond 2.27.4 (development line), same recipe
+#   stable/2.26.1-p0.1.0         LilyPond 2.26.1 (stable line), built by recipe 0.1.0
+#   dev/2.27.4+gca8dc08-p0.1.0   LilyPond 2.27.4 at pin ca8dc08 (dev line), same recipe
+#
+# Dev tags include the pinned revision: master moves many times within one
+# upstream VERSION, and each merged pin bump should be releasable.
 #
 # Two independent things trigger a release — upstream moving, or our own
 # patches/overlay/build flags changing — so the tag carries both axes. One
@@ -51,10 +54,10 @@ jobs:
         id: tag
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag || github.ref_name }}"   # e.g. dev/2.27.4-p0.1.0
+          tag="${{ inputs.tag || github.ref_name }}"   # e.g. dev/2.27.4+gca8dc08-p0.1.0
           variant="${tag%%/*}"                      # dev | stable
-          rest="${tag#*/}"                          # 2.27.4-p0.1.0
-          claimed_upstream="${rest%-p*}"            # 2.27.4
+          rest="${tag#*/}"                          # 2.27.4+gca8dc08-p0.1.0
+          claimed_upstream="${rest%-p*}"            # 2.27.4+gca8dc08 (dev) | 2.26.1 (stable)
           claimed_recipe="${rest##*-p}"             # 0.1.0
 
           case "$variant" in
@@ -72,11 +75,14 @@ jobs:
 
           # The upstream version is derived from the pinned source; the tag
           # must agree with that too, so a tag cannot misdescribe its content.
+          # Dev tags claim the full version incl. +g<rev>; stable tags the
+          # bare version.
           full="$(nix eval --raw ".#$attr.version")"   # 2.27.4+g32e3cc2
           actual_upstream="${full%%+*}"
           rev="${full##*+}"
-          if [ "$claimed_upstream" != "$actual_upstream" ]; then
-            echo "::error::tag claims LilyPond $claimed_upstream, the pin builds $actual_upstream"
+          expected=$([ "$variant" = dev ] && echo "$full" || echo "$actual_upstream")
+          if [ "$claimed_upstream" != "$expected" ]; then
+            echo "::error::tag claims LilyPond $claimed_upstream, the pin builds $expected"
             exit 1
           fi
 
@@ -84,6 +90,7 @@ jobs:
             echo "variant=$variant"
             echo "attr=$attr"
             echo "upstream=$actual_upstream"
+            echo "label=$expected" # what the tag claims: incl. rev for dev
             echo "rev=$rev"
             echo "recipe=$declared_recipe"
             echo "slug=$actual_upstream-$variant"
@@ -259,4 +266,4 @@ jobs:
           # keep "Latest" pointing at the stable line even when the knope
           # bot's recipe releases or dev pre-releases land afterwards
           make_latest: ${{ steps.tag.outputs.variant == 'stable' && 'true' || 'false' }}
-          name: "LilyPond ${{ steps.tag.outputs.upstream }} (${{ steps.tag.outputs.variant }}) — recipe ${{ steps.tag.outputs.recipe }}"
+          name: "LilyPond ${{ steps.tag.outputs.label }} (${{ steps.tag.outputs.variant }}) — recipe ${{ steps.tag.outputs.recipe }}"

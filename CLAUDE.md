@@ -82,8 +82,15 @@ recipe changing** (patches, overlay, build flags) — so no single number can
 describe one. The tag carries both axes, and there is one release stream per
 variant:
 
-    stable/2.26.1-p0.1.0     LilyPond 2.26.1, stable line, recipe 0.1.0
-    dev/2.27.4-p0.1.0        LilyPond 2.27.4, development line, same recipe
+    stable/2.26.1-p0.1.0         LilyPond 2.26.1, stable line, recipe 0.1.0
+    dev/2.27.4+gca8dc08-p0.1.0   LilyPond 2.27.4 at pin ca8dc08, dev line, same recipe
+
+Dev tags carry the pinned revision because master moves many times within
+one upstream `VERSION`; without it, weekly pin bumps would collapse onto an
+existing tag and never release. Stable pins only move on a real upstream
+release, so stable tags stay rev-less. Artifact filenames keep the bare
+version (`2.27.4-dev` slug) either way — the rev lives in the tag, the
+release name, and `provenance.json`.
 
 Consequences worth understanding:
 

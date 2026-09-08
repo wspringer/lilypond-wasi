@@ -9,6 +9,12 @@
 # that already exist are skipped — so an upstream bump on master never
 # republishes an unchanged stable artifact.
 #
+# Dev tags carry the full version *including* the pinned revision
+# (dev/2.27.3+gca8dc08-p0.1.3): master moves many times within one upstream
+# VERSION, and without the rev those pin bumps would all collapse onto an
+# existing tag and never release. Stable pins only move on a real upstream
+# release, so stable tags stay rev-less.
+#
 # release.yml is dispatched explicitly because refs created with
 # GITHUB_TOKEN do not trigger `on: push: tags:` workflows (the same
 # loop-prevention that bit update-upstream.yml).
@@ -44,7 +50,11 @@ jobs:
           for variant in stable dev; do
             attr=$([ "$variant" = dev ] && echo lilypond || echo lilypond-stable)
             full="$(nix eval --raw ".#packages.x86_64-linux.$attr.version")"
-            upstream="${full%%+*}"
+            if [ "$variant" = dev ]; then
+              upstream="$full" # keep +g<rev>: every pin bump is a new tag
+            else
+              upstream="${full%%+*}"
+            fi
             tag="$variant/$upstream-p$recipe"
 
             if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
