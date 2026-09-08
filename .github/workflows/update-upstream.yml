@@ -69,6 +69,28 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Ask GitLab what the move actually contains, so the PR body can say.
+      # Garnish, not gate: if the API is unreachable, fall back to a note and
+      # let the compare link in the body do the work.
+      - name: What changed upstream
+        if: steps.changed.outputs.changed == 'true'
+        id: upstream
+        run: |
+          {
+            echo "log<<EOF_UPSTREAM_LOG"
+            if json=$(curl -sf "https://gitlab.com/api/v4/projects/lilypond%2Flilypond/repository/compare?from=${{ steps.before.outputs.rev }}&to=${{ steps.after.outputs.rev }}") &&
+               log=$(jq -r --argjson cap 30 '
+                 (.commits | reverse) as $c
+                 | ($c[:$cap][] | "- `\(.short_id)` \(.title)"),
+                   (if ($c | length) > $cap then "- …and \(($c | length) - $cap) more" else empty end)
+               ' <<<"$json"); then
+              echo "$log"
+            else
+              echo "_Could not fetch the commit list — see the compare link below._"
+            fi
+            echo "EOF_UPSTREAM_LOG"
+          } >> "$GITHUB_OUTPUT"
+
       # The real question: does our patch series still apply to the new tip?
       - name: Patch series applies
         if: steps.changed.outputs.changed == 'true'
@@ -109,6 +131,12 @@ jobs:
             | from | `${{ steps.before.outputs.rev }}` |
             | to | `${{ steps.after.outputs.rev }}` |
             | version | `${{ steps.after.outputs.version }}` |
+
+            ### Upstream changes
+
+            ${{ steps.upstream.outputs.log }}
+
+            Full diff: [compare on GitLab](https://gitlab.com/lilypond/lilypond/-/compare/${{ steps.before.outputs.rev }}...${{ steps.after.outputs.rev }})
 
             Verified on this runner before the PR was opened:
 
