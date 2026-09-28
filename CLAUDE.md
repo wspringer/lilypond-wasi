@@ -154,6 +154,17 @@ where possible a wasmtime run) before starting the next.
   Guile/GC/Pango/Fontconfig/FreeType stack, not LilyPond's own SVG code.
   Check it before fighting a stage-2 battle; hlolli may have won it already.
 
+## Testing
+
+    nix flake check                          # all engrave checks, this system
+    nix build .#checks.<system>.dev-text     # one case
+
+`nix/checks/` runs the WASI module under wasmtime with the release mount
+layout, per variant (`dev-*`, `stable-*`): SVG, EPS, cairo PDF/PNG, text
+fonts, multi-page, Scheme, includes, and error paths. The assertions live
+in `nix/checks/lib.sh`, the inputs in `nix/checks/cases/`. build.yml and
+release.yml both run these, so there is one definition of "it engraves".
+
 ## Binary cache
 
 Of the wasm32-unknown-wasi build closure (77 output paths):
