@@ -2,6 +2,38 @@
 
 Newest first. Every entry: upstream rev, what was attempted, outcome.
 
+## 2026-09-28 — Engrave checks: `nix flake check` tests both variants
+
+Upstream unchanged (master ca8dc08, stable/2.26 8d6b320). Added
+`checks.<system>` (nix/checks): one derivation per case per variant, 16
+in all, ~80 s for the lot on aarch64-darwin. Cases: SVG, EPS, cairo
+PDF/PNG/SVG, text in every bundled family, a multi-page score (GC
+pressure), Scheme (call/cc, dynamic-wind, hash tables, music functions —
+results printed as markup and asserted in the SVG), \include from both the
+input dir and the library, and syntax/Scheme errors, which must surface as
+located LilyPond errors with exit 1, never a wasm trap.
+
+Findings worth keeping:
+
+- **fontconfig falls back silently.** A markup asking for a nonexistent
+  family engraves with no warning at all; the SVG even names the requested
+  family. The only trace is an extra embedded font in the EPS (DejaVuSans).
+  So the EPS check pins the *exact* embedded font set, and was
+  mutation-tested against exactly this.
+- A text-free score still embeds C059-Roman in EPS (default text font).
+- The EPS gs wart is now asserted precisely: nothing may warn before
+  `Converting to PNG...`, and the failure must be the gs refusal.
+
+build.yml's Linux "Engrave smoke test" never engraved (it only built);
+both jobs now run `nix flake check`. release.yml runs the released
+variant's checks in place of its hand-rolled wasmtime call. The flake
+refactor (shared `perSystem`) leaves every package store path unchanged,
+so no change file.
+
+Open: one parallel local run had stable-cairo fail once, stderr lost; 12
+sequential reruns and 3 full parallel batches (48 builds) were clean.
+If it recurs in CI, the log will say which assertion.
+
 ## 2026-09-08 — Release plumbing: readable upstream PRs, mergeable, and a tag scheme that sees pin bumps
 
 Upstream master 32e3cc2 -> ca8dc08 (merged as #11); both engines built,
