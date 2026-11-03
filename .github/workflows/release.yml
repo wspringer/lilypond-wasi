@@ -104,30 +104,21 @@ jobs:
           nix build ".#$([ '${{ steps.tag.outputs.variant }}' = dev ] && echo bytecode || echo bytecode-stable)" -o result-bytecode
           nix build ".#wasi-guile.out" -o result-guile
 
+      # The same engrave checks build.yml runs (nix/checks), for this
+      # variant only: SVG, EPS, cairo PDF/PNG, fonts, Scheme, error paths.
+      # A module that fails any of them never becomes a release.
       - name: Verify the module engraves before publishing it
         run: |
           set -euo pipefail
-          guile=$(nix build '.#wasi-guile.out' --print-out-paths)
-          mkdir -p work/home work/tmp work/cache/fontconfig work/lily-lib
-          printf '\\version "%s"\n{ c%s e%s g%s }\n' "${{ steps.tag.outputs.upstream }}" "'" "'" "'" > work/in.ly
-          nix develop --command wasmtime run \
-            -W exceptions=y -C cache=n \
-            --dir "$PWD/work::/work" \
-            --dir "$PWD/result-assets/share/lilypond::/lilypond" \
-            --dir "$guile/share/guile/3.0::/guile" \
-            --dir "$guile/lib/guile/3.0/ccache::/guile-ccache" \
-            --env FONTCONFIG_FILE=/lilypond/fonts/fonts.conf \
-            --env GUILE_LOAD_PATH=/guile \
-            --dir "$PWD/result-bytecode/ccache::/lily-ccache" \
-            --env GUILE_LOAD_COMPILED_PATH=/guile-ccache:/lily-ccache \
-            --env GUILE_SYSTEM_PATH=/guile \
-            --env GUILE_SYSTEM_COMPILED_PATH=/guile-ccache \
-            --env HOME=/work/home --env LILYPOND_DATADIR=/lilypond \
-            --env LILYPOND_LIBDIR=/work/lily-lib --env TMPDIR=/work/tmp \
-            --env XDG_CACHE_HOME=/work/cache --argv0 /lilypond \
-            result-engine/bin/lilypond.wasm -dbackend=cairo --formats=pdf,svg -o /work/out /work/in.ly
-          test -s work/out.pdf && test -s work/out.svg
-          echo "engraved pdf + svg — publishing"
+          system=$(nix eval --impure --raw --expr builtins.currentSystem)
+          variant="${{ steps.tag.outputs.variant }}"
+          checks=$(nix eval --raw ".#checks.$system" --apply "cs:
+            builtins.concatStringsSep \" \" (map (n: \".#checks.$system.\" + n)
+              (builtins.filter (n: builtins.match \"$variant-.*\" n != null)
+                (builtins.attrNames cs)))")
+          test -n "$checks"
+          nix build --no-link --print-build-logs $checks
+          echo "engrave checks passed for $variant — publishing"
 
       - name: Stage artifacts
         run: |
@@ -219,7 +210,7 @@ jobs:
           upstream \`${{ steps.tag.outputs.rev }}\`) compiled to \`wasm32-unknown-wasi\`,
           built by recipe \`${{ steps.tag.outputs.recipe }}\`.
 
-          Verified on this runner: the module engraves SVG under wasmtime before publishing.
+          Verified on this runner: the module passes the engrave checks (SVG, EPS, PDF, PNG) under wasmtime before publishing.
 
           ## Running it
 

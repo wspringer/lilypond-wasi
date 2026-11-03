@@ -67,10 +67,11 @@
 
       artifactVersion = src:
         "${upstreamVersion src}+g${builtins.substring 0 7 (src.rev or "dirty")}";
-    in
-    {
-      packages = forAllSystems (pkgs:
+
+      # Per-system build graph, shared by packages and checks.
+      perSystem = lib.genAttrs systems (system:
         let
+          pkgs = nixpkgs.legacyPackages.${system};
           # wasm32-unknown-wasi, static. Target-scoped fixes for the
           # dependency stack live in nix/wasi-overlay.nix. Shared by every
           # LilyPond variant — none of it depends on the LilyPond version.
@@ -93,58 +94,80 @@
               };
             in
             # The engine loads the Scheme library out of the asset tree.
-            # Mixing generations would fail in confusing ways at run time.
+              # Mixing generations would fail in confusing ways at run time.
             assert lilypond.version == assets.version;
             { inherit source lilypond assets bytecode version; };
 
           dev = mkVariant lilypond-src;
           stable = mkVariant lilypond-stable-src;
         in
-        {
-          # Development series (master) — the tailing target.
-          source = dev.source;
-          lilypond = dev.lilypond;
-          assets = dev.assets;
-          bytecode = dev.bytecode;
+        { inherit pkgs wasi dev stable; });
+    in
+    {
+      packages = lib.mapAttrs
+        (system: { pkgs, wasi, dev, stable }:
+          {
+            # Development series (master) — the tailing target.
+            source = dev.source;
+            lilypond = dev.lilypond;
+            assets = dev.assets;
+            bytecode = dev.bytecode;
 
-          # Stable series (stable/2.26) — matches what nixpkgs ships and
-          # what analog's native pipeline engraves with.
-          source-stable = stable.source;
-          lilypond-stable = stable.lilypond;
-          assets-stable = stable.assets;
-          bytecode-stable = stable.bytecode;
+            # Stable series (stable/2.26) — matches what nixpkgs ships and
+            # what analog's native pipeline engraves with.
+            source-stable = stable.source;
+            lilypond-stable = stable.lilypond;
+            assets-stable = stable.assets;
+            bytecode-stable = stable.bytecode;
 
-          # Stage 2 — the WASI dependency stack, shared by both variants.
-          wasi-zlib = wasi.zlib;
-          wasi-expat = wasi.expat;
-          wasi-freetype = wasi.freetype;
-          wasi-libffi = wasi.libffi;
-          wasi-boehmgc = wasi.boehmgc;
-          wasi-fontconfig = wasi.fontconfig;
-          wasi-glib = wasi.glib;
-          wasi-fribidi = wasi.fribidi;
-          wasi-harfbuzz = wasi.harfbuzz;
-          wasi-gmp = wasi.gmp;
-          wasi-libunistring = wasi.libunistring;
-          wasi-pango = wasi.pango;
-          wasi-guile = wasi.guile;
-          wasi-pixman = wasi.pixman;
-          wasi-cairo = wasi.cairo;
+            # Stage 2 — the WASI dependency stack, shared by both variants.
+            wasi-zlib = wasi.zlib;
+            wasi-expat = wasi.expat;
+            wasi-freetype = wasi.freetype;
+            wasi-libffi = wasi.libffi;
+            wasi-boehmgc = wasi.boehmgc;
+            wasi-fontconfig = wasi.fontconfig;
+            wasi-glib = wasi.glib;
+            wasi-fribidi = wasi.fribidi;
+            wasi-harfbuzz = wasi.harfbuzz;
+            wasi-gmp = wasi.gmp;
+            wasi-libunistring = wasi.libunistring;
+            wasi-pango = wasi.pango;
+            wasi-guile = wasi.guile;
+            wasi-pixman = wasi.pixman;
+            wasi-cairo = wasi.cairo;
 
-          wasi-deps = pkgs.linkFarm "lilypond-wasi-deps" [
-            { name = "zlib"; path = wasi.zlib; }
-            { name = "expat"; path = wasi.expat; }
-            { name = "freetype"; path = wasi.freetype; }
-            { name = "libffi"; path = wasi.libffi; }
-            { name = "boehmgc"; path = wasi.boehmgc; }
-            { name = "fontconfig"; path = wasi.fontconfig; }
-            { name = "glib"; path = wasi.glib; }
-            { name = "pango"; path = wasi.pango; }
-            { name = "guile"; path = wasi.guile; }
-          ];
+            wasi-deps = pkgs.linkFarm "lilypond-wasi-deps" [
+              { name = "zlib"; path = wasi.zlib; }
+              { name = "expat"; path = wasi.expat; }
+              { name = "freetype"; path = wasi.freetype; }
+              { name = "libffi"; path = wasi.libffi; }
+              { name = "boehmgc"; path = wasi.boehmgc; }
+              { name = "fontconfig"; path = wasi.fontconfig; }
+              { name = "glib"; path = wasi.glib; }
+              { name = "pango"; path = wasi.pango; }
+              { name = "guile"; path = wasi.guile; }
+            ];
 
-          default = dev.lilypond;
-        });
+            default = dev.lilypond;
+          })
+        perSystem;
+
+      # Engrave checks (nix/checks), per variant: dev-svg, stable-eps, …
+      # `nix flake check` runs them all for the current system.
+      checks = lib.mapAttrs
+        (system: { pkgs, wasi, dev, stable }:
+          let
+            checksFor = prefix: variant:
+              lib.mapAttrs' (name: lib.nameValuePair "${prefix}-${name}")
+                # callPackage adds override helpers; keep only the checks
+                (lib.filterAttrs (_: lib.isDerivation) (pkgs.callPackage ./nix/checks {
+                  inherit (variant) lilypond assets bytecode;
+                  guile = wasi.guile.out;
+                }));
+          in
+          checksFor "dev" dev // checksFor "stable" stable)
+        perSystem;
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
